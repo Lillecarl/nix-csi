@@ -1,0 +1,78 @@
+--- # ServiceAccount
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: knix
+  namespace: default
+--- # Role
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: knix
+rules:
+- apiGroups: ["apiextensions.k8s.io"]
+  resources: ["customresourcedefinitions"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["*"]
+  resources: ["*"]
+  verbs: ["*"]
+--- # Binding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: knix-binding
+subjects:
+- kind: ServiceAccount
+  name: knix
+  namespace: default
+roleRef:
+  kind: ClusterRole
+  name: knix
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: knix-deployment
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: knix-deployment
+  template:
+    metadata:
+      labels:
+        app: knix-deployment
+    spec:
+      serviceAccountName: knix
+      containers:
+      - name: sleeper
+        image: nixpkgs/nix-flakes
+        command: ["sleep", "infinity"]
+        volumeMounts:
+        - name: knixdev
+          mountPath: /knix
+      volumes:
+      - name: knixdev
+        hostPath:
+          path: /home/lillecarl/Code/knix
+          type: Directory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: knix-deployment
+  namespace: default
+spec:
+  selector:
+    app: knix-deployment
+  ports:
+    - name: zmq-pub
+      protocol: TCP
+      port: 5555
+      targetPort: 5555
+    - name: webhook
+      protocol: TCP
+      port: 443
+      targetPort: 443
+  type: ClusterIP

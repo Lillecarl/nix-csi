@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: knix-hostpath
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: knix-hostpath
+  template:
+    metadata:
+      labels:
+        app: knix-hostpath
+    spec:
+      initContainers:
+      - command:
+        - sh
+        - -c
+        - "sleep 5 && cp --verbose --archive --update=none /nix/* /nix2/"
+        image: nixpkgs/nix-flakes
+        name: init
+        volumeMounts:
+        - mountPath: /nix2
+          name: knix
+      containers:
+      - name: sleeper
+        image: nixpkgs/nix-flakes
+        command: ["sleep", "infinity"]
+        volumeMounts:
+        - name: knix
+          mountPath: /nix
+        - name: knixdev
+          mountPath: /knix
+        env:
+        - name: KNIX_NODENAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+      volumes:
+      - name: knix
+        hostPath:
+          path: /var/lib/knix/nix
+          type: DirectoryOrCreate
+      - name: knixdev
+        hostPath:
+          path: /home/lillecarl/Code/knix
+          type: Directory
