@@ -15,6 +15,8 @@ from queue import Queue
 from typing import Any
 from pathlib import Path
 from pprint import pprint
+from csi import csi_pb2
+from csi import csi_pb2_grpc
 
 sys.path.insert(0, os.getcwd())
 
@@ -30,6 +32,7 @@ socket.bind("tcp://*:5555")  # Listen on all interfaces, port 5555
 async def on_startup(memo, settings: kopf.OperatorSettings, **_):
     # Plain and simple local endpoint with an auto-generated certificate:
     # settings.admission.server = kopf.WebhookServer()
+    # settings.admission.server = kopf.WebhookNgrokTunnel(binary="/nix/store/giq8zlik5j6iyc2dbw44dhhmrj2sywi3-ngrok-3.19.1/bin/ngrok", token='2VJgrtIJFJ2KnZViFjDckD3Rzmu_jKwhLWtkRzg8kYpE2qhz', )
     settings.admission.server = kopf.WebhookServer(
                                                    addr="0.0.0.0",
                                                    port = 443,
@@ -154,26 +157,37 @@ async def mutate_pods(body, patch, **_):
     }
 
 @kopf.on.event('pods') # type: ignore
-async def run_builds(event, **_):
+async def run_build(memo: kopf.Memo, event, **_):
+    # Initialize nodeName memo for pods
+    if "nodeName" not in memo.keys():
+        memo["nodeName"] = ""
+
     try:
-        if event["type"] != "MODIFIED":
-            return
-
-        logging.info(msg=json.dumps(event))
-
+        # Get pod object
         pod = event["object"]
+        # Extract nodeName
         nodeName = pod["spec"]["nodeName"]
+        # Check if we have a knix-expr annotation
         exprObjName = pod["metadata"]["annotations"]["knix-expr"]
+        # Extract namespace
         namespace = pod["metadata"]["namespace"]
+        # Get the expression
         knixExpr = await getKnixExpr(exprObjName, namespace)
 
         logging.info(msg=f"Sending build {knixExpr["data"]["expr"]} to {nodeName}")
-        socket.send_string(json.dumps({
-                                          "host": nodeName,
-                                          "expr": knixExpr["data"]["expr"],
-                                      }))
-    except Exception as ex:
+
+        # Send build to node
+        if nodeName != memo["nodeName"] and nodeName != "":
+            await socket.send_string(json.dumps({
+                                              "host": nodeName,
+                                              "expr": knixExpr["data"]["expr"],
+                                          }))
+            memo["nodeName"] = nodeName
+    # Ignore KeyErrors, we abuse exceptions for flow-control
+    except KeyError:
         pass
+    except Exception as ex:
+        logging.error(ex)
 
 # crName = custom resource name
 async def getKnixExpr(crName, namespace) -> dict:
@@ -191,3 +205,4 @@ async def getKnixExpr(crName, namespace) -> dict:
     resourceObject = json.loads(resourceResult.stdout)
 
     return resourceObject
+
