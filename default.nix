@@ -6,5 +6,9 @@ let
     src = (builtins.toString ./.);
     copySourceTreeToStore = false;
   };
+  system = builtins.currentSystem;
 in
-flake.outputs
+flake.outputs // {
+  spkgs = flake.outputs.legacyPackages.${system};
+  spackages = flake.outputs.packages.${system};
+}
