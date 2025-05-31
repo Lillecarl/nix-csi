@@ -3,6 +3,7 @@
 , fetchFromGitHub
 , grpcio-tools
 , protobuf
+, mypy-protobuf
 , python
 , pythonRelaxDepsHook
 }:
@@ -23,12 +24,14 @@ buildPythonPackage {
   nativeBuildInputs = [
     grpcio-tools
     protobuf
+    mypy-protobuf
     pythonRelaxDepsHook
   ];
 
   propagatedBuildInputs = [
     grpcio-tools
     protobuf
+    mypy-protobuf
   ];
 
   # There's no setup.py, so we use a custom buildPhase and installPhase
@@ -41,6 +44,7 @@ buildPythonPackage {
       -I. \
       --python_out="$OUTDIR" \
       --grpc_python_out="$OUTDIR" \
+      --mypy_out="$OUTDIR" \
       csi.proto
     touch "$OUTDIR/__init__.py"
   '';
@@ -49,6 +53,7 @@ buildPythonPackage {
     moddir="$out/${python.sitePackages}/csi"
     mkdir -p "$moddir"
     cp $TMPDIR/csi/*.py "$moddir/"
+    cp $TMPDIR/csi/*.pyi "$moddir/"
   '';
 
   meta = with lib; {
