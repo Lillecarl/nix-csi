@@ -47,6 +47,18 @@ async def cp(src: str, dst: str, args: list[str] = []) -> ProcRet:
 
     return result
 
+async def rsync(src: str, dst: str, args: list[str] = []) -> ProcRet:
+    result = await run_subprocess([
+        "rsync",
+        "--archive",
+        "--delete",
+        "--reflink=always",
+        src,
+        dst,        
+    ])
+
+    return result
+
 async def cpp(src: str, dst: str) -> ProcRet:
     return await cp(src, dst, ["--parents"])
 
