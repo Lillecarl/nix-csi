@@ -42,7 +42,7 @@ spec:
         command:
         - sh
         - -c
-        - "cp --verbose --archive --recursive --update=none /nix/* /nix2/"
+        - "cp --verbose --archive --recursive --update=none /nix/. /nix2/"
         # - "nix run --file /knix spackages.knix-csi-node"
         # image: rg.nl-ams.scw.cloud/lillecarl/knix:latest
         image: nixpkgs/nix-flakes
@@ -170,7 +170,7 @@ spec:
         command:
         - sh
         - -c
-        - "cp --verbose --archive --recursive --update=none /nix/* /nix2/"
+        - "cp --verbose --archive --recursive --update=none /nix/. /nix2/"
         image: nixpkgs/nix-flakes
         volumeMounts:
         - mountPath: /nix2
