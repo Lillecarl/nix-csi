@@ -36,7 +36,7 @@
       in
       {
         packages = {
-          knix-csi-node =
+          knix-csi =
             pkgs.writeScriptBin "knix-csi-node" # fish
               ''
                 #! ${lib.getExe pkgs.fish}
@@ -44,25 +44,13 @@
                 set --export --prepend PATH $(nix build --no-link --print-out-paths --file /knix spkgs.util-linux.outPath)/bin
                 set --export --prepend PATH $(nix build --no-link --print-out-paths --file /knix spkgs.rsync.outPath)/bin
                 echo $PATH
-                exec ${lib.getExe self.packages.${pkgs.system}.knix-csi-node-py} $argv
+                exec ${lib.getExe self.packages.${pkgs.system}.knix-csi-py} $argv
               '';
-          knix-csi-node-py =
+          knix-csi-py =
             pkgs.writeScriptBin "knix-csi-node" # python
               ''
                 #! ${lib.getExe ourPython}
                 ${builtins.readFile ./python/csi.py}
-              '';
-          knix-daemonset =
-            pkgs.writeScriptBin "knix-daemonset" # python
-              ''
-                #! ${lib.getExe ourPython}
-                ${builtins.readFile ./python/knix-daemonset.py}
-              '';
-          knix-deployment =
-            pkgs.writeScriptBin "knix-daemonset" # python
-              ''
-                #! ${lib.getExe ourPython}
-                ${builtins.readFile ./python/knix-deployment.py}
               '';
           kopf =
             pkgs.writeScriptBin "kopf" # fish

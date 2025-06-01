@@ -12,6 +12,7 @@ class ProcRet:
         self.stderr = stderr
         self.cmd = cmd
 
+# simple subprocess function with automatic error printing
 async def run_subprocess(cmd: list[str]) -> ProcRet:
     logger.debug(f"Running command: {' '.join(cmd)}")
     proc = await asyncio.create_subprocess_exec(
@@ -35,6 +36,7 @@ async def run_subprocess(cmd: list[str]) -> ProcRet:
 
     return ProcRet(retcode, stdout.decode().rstrip(), stderr.decode().rstrip(), " ".join(cmd))
 
+# subprocess cp
 async def cp(src: str, dst: str, args: list[str] = []) -> ProcRet:
     commonArgs = [
         "cp",
@@ -59,6 +61,7 @@ async def rsync(src: str, dst: str, args: list[str] = []) -> ProcRet:
 
     return result
 
+# our cp command with --parents
 async def cpp(src: str, dst: str) -> ProcRet:
     return await cp(src, dst, ["--parents"])
 
