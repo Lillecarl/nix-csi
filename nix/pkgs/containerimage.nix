@@ -7,7 +7,7 @@
   git,
   nix,
   writeTextFile,
-  ...
+  knix-csi,
 }:
 let
   nixConf = writeTextFile {  
@@ -25,6 +25,7 @@ let
       dockerTools.fakeNss
       fish
       git
+      knix-csi
       nix
       nixConf
     ];

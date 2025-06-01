@@ -28,7 +28,7 @@
         });
         certbuilder = pkgs.python3Packages.callPackage ./nix/pkgs/certbuilder.nix { };
         csi-proto-python = pkgs.python3Packages.callPackage ./nix/pkgs/csi-proto-python/default.nix { };
-        containerimage = pkgs.callPackage ./nix/pkgs/containerimage.nix { inherit ourPython; };
+        containerimage = pkgs.callPackage ./nix/pkgs/containerimage.nix { inherit knix-csi; };
         nixng = (
           import ./nix/pkgs/nixng.nix {
             inherit (nixng) nglib;
