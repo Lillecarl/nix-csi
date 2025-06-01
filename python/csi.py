@@ -14,6 +14,7 @@ from grpclib.exceptions import GRPCError
 from grpclib.const import Status
 from csi import csi_grpc, csi_pb2
 
+# Hack importpath so we can reach helpers without building a package
 sys.path.insert(0, "/knix/python")
 
 import helpers
@@ -28,27 +29,8 @@ if KUBE_NODE_NAME is None:
     raise Exception("Please make sure KUBE_NODE_NAME is set")
 KUBE_NODE_NAME = str(KUBE_NODE_NAME)
 
-# Volumes will be created under /nix/var/knix/$packagename inside the container,
-# which maps to /var/lib/knix/nix/var/knix/$packagename on the host
-NIX_MOUNT_ROOT = "/nix"  # Container path
-KNIX_VOLUMES_ROOT = os.path.join(NIX_MOUNT_ROOT, "var/knix")  # Container path for volumes
-
 def log_request(method_name: str, request: Any):
     logger.info("Received %s:\n%s", method_name, request)
-
-
-def log_cmderror(cmd: helpers.ProcRet):
-    error = f"""
-Failed to run {cmd.cmd}
-retcode: {cmd.retcode}
-stdout: {cmd.stdout}
-stderr: {cmd.stderr}
-"""
-    logger.error(msg=error)
-    raise GRPCError(
-        Status.INTERNAL,
-        error
-    )
 
 async def realizeExpr(expr: str, volume_id: str) -> Optional[str]:
     buildResult = await helpers.build(expr)
@@ -76,15 +58,13 @@ async def realizeExpr(expr: str, volume_id: str) -> Optional[str]:
     await helpers.mkdir(packageRefPath)
     # Create /nix/var in "container store root"
     await helpers.mkdir(packageVarPath)
-    # Copy package to result folder (/nix/var/nix/result in container)
-    # Trailing slashes are essential here to make cp do the right thing
-    await helpers.cp(f"{packagePath}/", f"{packageResultPath}/")
-
     # Copy all dependencies of package into container store
     for path in pathInfoResult.stdout.splitlines():
         res = await helpers.cpp(path, packageRefPath)
         if res.retcode != 0:
             return
+    # Copy package to result folder (/nix/var/nix/result in container)
+    await helpers.cp(f"{packagePath}", f"{packageResultPath}")
         
     return packageName
 
@@ -260,15 +240,15 @@ class ControllerServicer(csi_grpc.ControllerBase):
             raise ValueError("ListVolumesRequest is None")
         log_request("ListVolumes", request)
         entries = []
-        if os.path.exists(KNIX_VOLUMES_ROOT):
-            for volume_id in os.listdir(KNIX_VOLUMES_ROOT):
-                volume_path = os.path.join(KNIX_VOLUMES_ROOT, volume_id)
+        if os.path.exists("/nix/var/knix"):
+            for volume_id in os.listdir("/nix/var/knix"):
+                volume_path = os.path.join("/nix/var/knix", volume_id)
                 if os.path.isdir(volume_path):
                     entries.append(
                         csi_pb2.ListVolumesResponse.Entry(
                             volume=csi_pb2.Volume(
                                 volume_id=volume_id,
-                                volume_context={"hostPath": volume_path}
+                                # volume_context={"hostPath": volume_path}
                             )
                         )
                     )
@@ -350,7 +330,7 @@ class ControllerServicer(csi_grpc.ControllerBase):
         reply = csi_pb2.ControllerGetVolumeResponse(
             volume=csi_pb2.Volume(
                 volume_id=request.volume_id,
-                volume_context={"expr": "PLACEHOLDER"}
+                # volume_context={"expr": "PLACEHOLDER"}
             )
         )
         await stream.send_message(reply)
@@ -518,9 +498,6 @@ async def serve(sock_path="/csi/csi.sock"):
         os.unlink(sock_path)
     except FileNotFoundError:
         pass
-
-    # Ensure KNIX_VOLUMES_ROOT exists
-    os.makedirs(KNIX_VOLUMES_ROOT, exist_ok=True)
 
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.bind(sock_path)
