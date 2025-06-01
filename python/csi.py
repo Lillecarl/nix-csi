@@ -4,6 +4,7 @@ import os
 import socket
 import sys
 import json
+import argparse
 
 from pathlib import Path
 from typing import Any, Optional
@@ -17,10 +18,6 @@ sys.path.insert(0, "/knix/python")
 
 import helpers
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s [%(name)s] %(message)s"
-)
 logger = logging.getLogger("csi.driver")
 
 CSI_PLUGIN_NAME = "knix.csi.store"
@@ -510,5 +507,27 @@ async def serve(sock_path="/csi/csi.sock"):
     logger.info(f"CSI driver (grpclib) listening on unix://{sock_path}")
     await server.wait_closed()
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="knix CSI Driver")
+    parser.add_argument(
+        "--loglevel",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Set the logging level (default: INFO)"
+    )
+    return parser.parse_args()
+
 if __name__ == "__main__":
+    args = parse_args()
+    logging.basicConfig(
+        level=getattr(logging, args.loglevel),
+        format="%(asctime)s %(levelname)s [%(name)s] %(message)s"
+    )
+    loglevel_str = logging.getLevelName(logger.getEffectiveLevel())
+    logger.info(f"Current log level: {loglevel_str}")
+
+    # Don't log hpack stuff
+    hpacklogger = logging.getLogger("hpack.hpack")
+    hpacklogger.setLevel(logging.INFO)
+
     asyncio.run(serve())
