@@ -22,7 +22,6 @@ logger = logging.getLogger("csi.driver")
 
 CSI_PLUGIN_NAME = "knix.csi.store"
 CSI_VENDOR_VERSION = "0.1.0"
-BASEDIR = "/nix/var/knix"
 
 KUBE_NODE_NAME = os.environ.get("KUBE_NODE_NAME")
 if KUBE_NODE_NAME is None:
@@ -50,7 +49,8 @@ stderr: {cmd.stderr}
         Status.INTERNAL,
         error
     )
-async def realizeExpr(expr: str) -> Optional[str]:
+
+async def realizeExpr(expr: str, volume_id: str) -> Optional[str]:
     buildResult = await helpers.build(expr)
 
     if buildResult.retcode != 0:
@@ -58,17 +58,17 @@ async def realizeExpr(expr: str) -> Optional[str]:
     
     packageName = str(buildResult.stdout).removeprefix("/nix/store/").removesuffix("/")
     packagePath = buildResult.stdout
-    packageRefPath = f"{BASEDIR}/{packageName}" 
+    packageRefPath = f"/nix/var/knix/{volume_id}" 
     packageVarPath =  f"{packageRefPath}/nix/var"
     packageResultPath =  f"{packageRefPath}/nix/var/result"
 
 
     if Path(packageRefPath).is_dir():
-        logger.info(f"Package {packageName} is already realized")
+        logger.info(f"Package {packageName} is already realized at {packageRefPath}")
         return packageName
 
     # Link package to gcroots
-    await helpers.ln(packagePath, f"/nix/var/nix/gcroots/{packageName}")
+    await helpers.ln(packagePath, f"/nix/var/nix/gcroots/{volume_id}")
 
     pathInfoResult = await helpers.pathInfo(expr)
 
@@ -194,6 +194,7 @@ class ControllerServicer(csi_grpc.ControllerBase):
         expr = json.loads(exprResult.stdout)["data"]["expr"]
 
         logger.info(msg=f"Found expression {exprName} with expression {expr}")
+        await helpers.build(expr)
 
         reply = csi_pb2.CreateVolumeResponse(
             volume=csi_pb2.Volume(
@@ -220,7 +221,7 @@ class ControllerServicer(csi_grpc.ControllerBase):
             raise ValueError("ControllerPublishVolumeRequest is None")
         log_request("ControllerPublishVolume", request)
         reply = csi_pb2.ControllerPublishVolumeResponse(
-            publish_context={"hostPath": get_volume_hostpath(request.volume_id)}
+            publish_context={"expr": "PLACEHOLDER"}
         )
         await stream.send_message(reply)
 
@@ -346,11 +347,10 @@ class ControllerServicer(csi_grpc.ControllerBase):
         if request is None:
             raise ValueError("ControllerGetVolumeRequest is None")
         log_request("ControllerGetVolume", request)
-        volume_path = get_volume_hostpath(request.volume_id)
         reply = csi_pb2.ControllerGetVolumeResponse(
             volume=csi_pb2.Volume(
                 volume_id=request.volume_id,
-                volume_context={"hostPath": volume_path}
+                volume_context={"expr": "PLACEHOLDER"}
             )
         )
         await stream.send_message(reply)
@@ -370,10 +370,11 @@ class NodeServicer(csi_grpc.NodeBase):
             raise ValueError("NodePublishVolumeRequest is None")
         log_request("NodePublishVolume", request)
 
+        logger.debug(msg=f"Looking for Nix expression in volume_context, volume_id: {request.volume_id}")
         expr = None
         for k,v in request.volume_context.items():
             if k == "expr":
-                logging.info(msg=f"Got expression {v}")
+                logger.info(msg=f"Got expression {v}")
                 expr = v
 
         if expr is None:
@@ -384,19 +385,22 @@ class NodeServicer(csi_grpc.NodeBase):
                 error
             )
 
-        packageName = await realizeExpr(expr)
+        logger.debug(msg=f"Realizing Nix expression: {expr}, volume_id: {request.volume_id}")
+        realizeRes = await realizeExpr(expr, request.volume_id)
 
+        logger.debug(msg=f"Creating {request.target_path} if it doesn't exist")
         await helpers.run_subprocess([
             "mkdir",
             "--parents",
             request.target_path,
         ])
 
+        logger.debug(msg=f"Mounting /nix/var/knix/{request.volume_id} on {request.target_path}")
         await helpers.run_subprocess([
             "mount",
             "--bind",
             "--verbose",
-            f"{BASEDIR}/{packageName}/nix",
+            f"/nix/var/knix/{request.volume_id}/nix",
             request.target_path,
         ])
 
@@ -409,11 +413,36 @@ class NodeServicer(csi_grpc.NodeBase):
             raise ValueError("NodeUnpublishVolumeRequest is None")
         log_request("NodeUnpublishVolume", request)
 
+        logger.debug(msg=f"Unmounting {request.target_path}")
         await helpers.run_subprocess([
             "umount",
             "--verbose",
             request.target_path,
         ])
+        logger.debug(msg=f"Removing /nix/var/knix/{request.volume_id}")
+        await helpers.run_subprocess([
+            "rm",
+            "--recursive",
+            "--force",
+            f"/nix/var/knix/{request.volume_id}"
+        ])
+        logger.debug(msg=f"Unlinking /nix/var/nix/gcroots/{request.volume_id}")
+        await helpers.run_subprocess([
+            "unlink",
+            f"/nix/var/nix/gcroots/{request.volume_id}"
+        ])
+        logger.debug(msg=f"Running garbage collection")
+        gcResult = await helpers.run_subprocess([
+            "nix",
+            "store",
+            "gc",
+            "--dry-run",
+            "--debug",
+        ])
+
+        logger.debug(msg=f"nix store gc output:")
+        logger.debug(msg=f"stdout: {gcResult.stdout}")
+        logger.debug(msg=f"stderr: {gcResult.stderr}")
 
         reply = csi_pb2.NodeUnpublishVolumeResponse()
         await stream.send_message(reply)
@@ -425,11 +454,11 @@ class NodeServicer(csi_grpc.NodeBase):
         log_request("NodeGetCapabilities", request)
         reply = csi_pb2.NodeGetCapabilitiesResponse(
             capabilities=[
-                csi_pb2.NodeServiceCapability(
-                    rpc=csi_pb2.NodeServiceCapability.RPC(
-                        type=csi_pb2.NodeServiceCapability.RPC.STAGE_UNSTAGE_VOLUME
-                    )
-                ),
+                # csi_pb2.NodeServiceCapability(
+                #     rpc=csi_pb2.NodeServiceCapability.RPC(
+                #         type=csi_pb2.NodeServiceCapability.RPC.STAGE_UNSTAGE_VOLUME
+                #     )
+                # ),
             ]
         )
         await stream.send_message(reply)
