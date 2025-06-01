@@ -1,104 +1,208 @@
 #! /usr/bin/env python3
 
+import kopf
+import logging
+import json
 import asyncio
+import time
+import threading
+import signal
 import sys
 import os
-import json
-import logging
 import zmq
 import zmq.asyncio
-from fastapi import FastAPI
-from hypercorn.asyncio import serve
-from hypercorn.config import Config
 from queue import Queue
+from typing import Any
+from pathlib import Path
+from pprint import pprint
+from csi import csi_pb2
+from csi import csi_pb2_grpc
 
 sys.path.insert(0, os.getcwd())
 
 import helpers
 
-logging.basicConfig(
-    level=logging.INFO,  # Set the default logger level
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-)
+serviceIP = "10.56.43.203"
 
-logger = logging.getLogger("build")
+ctx = zmq.asyncio.Context()
+socket = ctx.socket(zmq.PUB)
+socket.bind("tcp://*:5555")  # Listen on all interfaces, port 5555
 
-queue = Queue()
+@kopf.on.startup() # type: ignore
+async def on_startup(memo, settings: kopf.OperatorSettings, **_):
+    # Plain and simple local endpoint with an auto-generated certificate:
+    # settings.admission.server = kopf.WebhookServer()
+    # settings.admission.server = kopf.WebhookNgrokTunnel(binary="/nix/store/giq8zlik5j6iyc2dbw44dhhmrj2sywi3-ngrok-3.19.1/bin/ngrok", token='2VJgrtIJFJ2KnZViFjDckD3Rzmu_jKwhLWtkRzg8kYpE2qhz', )
+    settings.admission.server = kopf.WebhookServer(
+                                                   addr="0.0.0.0",
+                                                   port = 443,
+                                                   # host="knix-deployment.default.svc.k8s.shitbox.lillecarl.com",
+                                                   host="10.56.43.203",
+                                               )
+    settings.admission.managed = "knix.is.cool"
+    settings.persistence.finalizer = "knix.is.cool/kopf-finalizer"
 
-async def pub():
-    ctx = zmq.asyncio.Context()
-    socket = ctx.socket(zmq.PUB)
-    socket.bind("tcp://*:5555")  # Listen on all interfaces, port 5555
+@kopf.on.cleanup() # type: ignore
+async def on_cleanup(memo, logger, **kwargs):
+    pass 
 
+async def patchExprStatus(name, namespace, statusobject):
+    patchObj = [{
+        "op": "replace",
+        "path": "/status",
+        "value": statusobject,
+    }]
+
+    await helpers.run_subprocess([
+                                    "kubectl",
+                                    f"--namespace={namespace}",
+                                    "patch",
+                                    "expressions.knix.cool",
+                                    "hello",
+                                    "--type=json",                                     
+                                    "--subresource=status",
+                                    f"--patch={json.dumps(patchObj)}"
+                                 ])
+
+async def buildExpr(exprName: str, exprNamespace: str, exprData: str):
+    # Wait for object to be commited, fix this
+    await asyncio.sleep(1)
+
+    # Update status
+    await patchExprStatus(exprName, exprNamespace, {
+                        "phase": "Pending",
+                        "message": "Evaluation successful",
+                    })
+    # Build expression
+    buildResult = await helpers.build(exprData)
+    if buildResult.retcode != 0:
+        # Build failed
+        await patchExprStatus(exprName, exprNamespace, {
+                            "phase": "Failed",
+                            "message": "Build failed",
+                        })
+
+        return
+
+    packageName = str(buildResult.stdout).removeprefix("/nix/store/").removesuffix("/")
+
+    # Build successful
+    await patchExprStatus(exprName, exprNamespace, {
+                        "phase": "Succeeded",
+                        "message": "Build successful",
+                        "result": packageName,
+                    })
+
+    # We should only build when pod is scheduled
+    # socket.send_string(json.dumps({
+    #                                   "host": "shitbox",
+    #                                   "expr": exprData,
+    #                               }))
+
+@kopf.on.mutate('expressions.knix.cool') # type: ignore
+async def handle_expressions(name, namespace, body, memo, patch: kopf.Patch, warnings: list[str], **_):
     try:
-        while True:
-            expr = await queue.get()
-            # expr = "(builtins.getFlake (toString \"/knix\")).legacyPackages.x86_64-linux.hello"
-            payload = {
-                "host": "shitbox",
-                "action": "build",
-                "expr": expr,
-            }
-            msg = json.dumps(payload)
-            buildResult = await helpers.build(expr)
-            if buildResult.retcode != 0:
-                continue
+        expr = body["data"]["expr"]
+        print(expr)
+        evalResult = await helpers.eval(expr)
+        if evalResult.retcode != 0:
+            raise kopf.AdmissionError(f"""
+Failed to evaluate nix expression
+{expr}
+stderr: {evalResult.stderr}
+""")
+
+        asyncio.create_task(buildExpr(name, namespace, expr))
             
-            packageName = str(buildResult.stdout).removeprefix("/nix/store/").removesuffix("/")
-            logger.info(msg=f"Built {packageName}")
-            await socket.send_string(msg)
-            logger.info(msg=f"Sent: {msg}")
-    except asyncio.CancelledError:
+    except Exception as ex:
         pass
-    finally:
-        socket.close()
-        ctx.term()
 
-async def comm():
-    ctx = zmq.asyncio.Context()
-    socket = ctx.socket(zmq.REP)
-    socket.bind("tcp://*:5556")
+
+# This has to be mutate + create for some reason. Otherwise we get patch errors
+@kopf.on.mutate('pods', operation="CREATE") # type: ignore
+async def mutate_pods(body, patch, **_):
     try:
-        while True:
-            msg = await socket.recv_string()
-            payload = json.loads(msg)
-            logging.info(msg=f"Received message, payload {msg}")
+        exprObjName = body["metadata"]["annotations"]["knix-expr"]
+        namespace = body["metadata"]["namespace"]
+        knixExpr = await getKnixExpr(exprObjName, namespace)
+    except KeyError as ex:
+        return # keyerror just means we don't have the annotation
 
-            if payload["action"] == "opbuild":
-                buildResult = await helpers.build(payload["expr"])
-                if buildResult.retcode != 0:
-                    return
+    packageBasePath = f"/var/lib/knix/nix/var/knix/{knixExpr["status"]["result"]}/nix"
 
-                packageName = str(buildResult.stdout).removeprefix("/nix/store/").removesuffix("/")
-                socket.send_string(packageName)
+    existingVolumes = []
+    try:
+        existingVolumes = body["spec"]["volumes"]
+    except:
+        pass # No existing volumes
 
-            if payload["action"] == "dsbuild":
-                queue.put(payload["expr"])
-                socket.send_string("")
-    except asyncio.CancelledError:
+    existingVolumes.append({
+                                "name": "knix",
+                                "hostPath": {
+                                    "path": str(packageBasePath),
+                                    "type": "Directory",
+                                }
+                           })
+
+    existingContainers = body["spec"]["containers"]
+    for container in existingContainers:
+        container["volumeMounts"].append({
+                                          "mountPath": "/nix",
+                                          "name": "knix",
+                                      })
+
+    patch["spec"] = {
+        "volumes": existingVolumes,
+        "containers": existingContainers
+    }
+
+@kopf.on.event('pods') # type: ignore
+async def run_build(memo: kopf.Memo, event, **_):
+    # Initialize nodeName memo for pods
+    if "nodeName" not in memo.keys():
+        memo["nodeName"] = ""
+
+    try:
+        # Get pod object
+        pod = event["object"]
+        # Extract nodeName
+        nodeName = pod["spec"]["nodeName"]
+        # Check if we have a knix-expr annotation
+        exprObjName = pod["metadata"]["annotations"]["knix-expr"]
+        # Extract namespace
+        namespace = pod["metadata"]["namespace"]
+        # Get the expression
+        knixExpr = await getKnixExpr(exprObjName, namespace)
+
+        logging.info(msg=f"Sending build {knixExpr["data"]["expr"]} to {nodeName}")
+
+        # Send build to node
+        if nodeName != memo["nodeName"] and nodeName != "":
+            await socket.send_string(json.dumps({
+                                              "host": nodeName,
+                                              "expr": knixExpr["data"]["expr"],
+                                          }))
+            memo["nodeName"] = nodeName
+    # Ignore KeyErrors, we abuse exceptions for flow-control
+    except KeyError:
         pass
-    finally:
-        socket.close()
-        ctx.term()
+    except Exception as ex:
+        logging.error(ex)
 
+# crName = custom resource name
+async def getKnixExpr(crName, namespace) -> dict:
+    resourceResult = await helpers.run_subprocess([
+                                                      "kubectl",
+                                                      "--output=json",
+                                                      f"--namespace={namespace}",
+                                                      "get",
+                                                      "expressions.knix.cool",
+                                                      crName,
+                                                  ])
+    if resourceResult.retcode != 0:
+        return {} # Error handling pls
 
-def fastapi_app():
-    app = FastAPI()
+    resourceObject = json.loads(resourceResult.stdout)
 
-    @app.get("/")
-    async def root():
-        return {"message": "Hello, Async World!"}
+    return resourceObject
 
-    return app
-
-async def fastapi_server():
-    app = fastapi_app()
-    config = Config()
-    config.bind = ["0.0.0.0:5556"]
-    await serve(app, config)
-
-async def main():
-    await asyncio.gather(pub(), fastapi_server())
-    
-if __name__ == "__main__":
-    asyncio.run(main())

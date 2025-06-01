@@ -1,0 +1,277 @@
+apiVersion: storage.k8s.io/v1
+kind: CSIDriver
+metadata:
+  name: knix.csi.store
+spec:
+  attachRequired: false
+  podInfoOnMount: true
+  volumeLifecycleModes:
+    - Persistent
+  fsGroupPolicy: File
+  requiresRepublish: false
+  storageCapacity: false
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: knix-csi
+provisioner: knix.csi.store
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: false
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: knix-csi-node
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: knix-csi-node
+  template:
+    metadata:
+      labels:
+        app: knix-csi-node
+    spec:
+      serviceAccountName: knix
+      hostNetwork: true
+      initContainers:
+      # --- init container: copy /nix to /nix2 which will be mounted in /nix in real container ---
+      - name: init
+        command:
+        - sh
+        - -c
+        - "cp --verbose --archive --recursive --update=none /nix/* /nix2/"
+        # - "nix run --file /knix spackages.knix-csi-node"
+        # image: rg.nl-ams.scw.cloud/lillecarl/knix:latest
+        image: nixpkgs/nix-flakes
+        volumeMounts:
+        - mountPath: /nix2
+          name: knix-store
+        imagePullPolicy: Always
+      # --- CSI driver: CSI grpc implementation ---
+      containers:
+      - name: knix-csi-node
+        # image: rg.nl-ams.scw.cloud/lillecarl/knix:latest
+        image: nixpkgs/nix-flakes
+        command:
+        - sleep
+        - infinity
+        # - sh
+        # - -c
+        # - "nix run --file /knix spackages.knix-csi-node"
+        securityContext:
+          privileged: true
+        env:
+        - name: CSI_ENDPOINT
+          value: unix:///csi/csi.sock
+        - name: KUBE_NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        volumeMounts:
+        - name: socket-dir
+          mountPath: /csi
+
+        - name: kubelet-dir
+          mountPath: /var/lib/kubelet
+          mountPropagation: "Bidirectional"
+
+        - name: knix-store
+          mountPath: /nix
+          mountPropagation: "HostToContainer"
+
+        - name: registration-dir
+          mountPath: /registration
+
+        - name: knixdev
+          mountPath: /knix
+
+
+      # --- CSI Sidecar: node-driver-registrar ---
+      - name: knix-csi-registrar
+        image: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.10.0
+        args:
+        - --v=5
+        - --csi-address=/csi/csi.sock
+        - --kubelet-registration-path=/var/lib/kubelet/plugins/knix.csi.nixstore/csi.sock
+        env:
+        - name: KUBE_NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        volumeMounts:
+        - name: socket-dir
+          mountPath: /csi
+        - name: kubelet-dir
+          mountPath: /var/lib/kubelet
+        - name: registration-dir
+          mountPath: /registration
+
+      # --- CSI Sidecar: liveness-probe ---
+      - name: knix-csi-liveness
+        image: registry.k8s.io/sig-storage/livenessprobe:v2.12.0
+        args:
+        - --csi-address=/csi/csi.sock
+        - --v=5
+        volumeMounts:
+        - name: socket-dir
+          mountPath: /csi
+        - name: registration-dir
+          mountPath: /registration
+
+      volumes:
+      - name: knix-store
+        hostPath:
+          path: /var/lib/knix/nix
+          type: DirectoryOrCreate
+
+      - name: socket-dir
+        hostPath:
+          path: /var/lib/kubelet/plugins/knix.csi.nixstore/
+          type: DirectoryOrCreate
+
+      - name: kubelet-dir
+        hostPath:
+          path: /var/lib/kubelet
+          type: Directory
+
+      - name: registration-dir
+        hostPath:
+          path: /var/lib/kubelet/plugins_registry
+          type: Directory
+
+      - name: knixdev
+        hostPath:
+          path: /home/lillecarl/Code/knix
+          type: Directory
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: knix-csi-controller
+  namespace: default
+spec:
+  serviceName: knix-csi-controller
+  replicas: 1
+  selector:
+    matchLabels:
+      app: knix-csi-controller
+  template:
+    metadata:
+      labels:
+        app: knix-csi-controller
+    spec:
+      serviceAccountName: knix
+      initContainers:
+      # --- init container: copy /nix to /nix2 which will be mounted in /nix in real container ---
+      - name: init
+        command:
+        - sh
+        - -c
+        - "cp --verbose --archive --recursive --update=none /nix/* /nix2/"
+        image: nixpkgs/nix-flakes
+        volumeMounts:
+        - mountPath: /nix2
+          name: nix-store
+        imagePullPolicy: Always
+      containers:
+        # --- CSI Controller container ---
+        - name: knix-csi-controller
+          image: nixpkgs/nix-flakes
+          command:
+            - sleep
+            - infinity
+            # - sh
+            # - -c
+            # - "nix run --file /knix spackages.knix-csi-node"
+          env:
+            - name: CSI_ENDPOINT
+              value: unix:///csi/csi.sock
+            - name: KUBE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: knixdev
+              mountPath: /knix
+            - name: socket-dir
+              mountPath: /csi
+
+        # --- CSI Sidecar: external-provisioner ---
+        - name: csi-provisioner
+          image: registry.k8s.io/sig-storage/csi-provisioner:v4.0.0
+          args:
+            - --csi-address=/csi/csi.sock
+            - --v=5
+            - --feature-gates=Topology=true
+          env:
+            - name: ADDRESS
+              value: /csi/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+
+        # --- CSI Sidecar: liveness-probe ---
+        - name: liveness-probe
+          image: registry.k8s.io/sig-storage/livenessprobe:v2.12.0
+          args:
+            - --csi-address=/csi/csi.sock
+            - --v=5
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+
+      volumes:
+        - name: socket-dir
+          emptyDir: {}
+        - name: nix-store
+          hostPath:
+            path: /var/lib/knix/controller
+            type: DirectoryOrCreate
+        - name: knixdev
+          hostPath:
+            path: /home/lillecarl/Code/knix
+            type: Directory
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: knix
+rules:
+- apiGroups:
+  - apiextensions.k8s.io
+  resources:
+  - customresourcedefinitions
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - '*'
+  resources:
+  - '*'
+  verbs:
+  - '*'
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: knix-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: knix
+subjects:
+- kind: ServiceAccount
+  name: knix
+  namespace: default
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: knix
+  namespace: default

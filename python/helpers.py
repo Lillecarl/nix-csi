@@ -6,10 +6,11 @@ import logging
 logger = logging.getLogger("helpers")
 
 class ProcRet:
-    def __init__(self, retcode: int, stdout: str, stderr: str):
+    def __init__(self, retcode: int, stdout: str, stderr: str, cmd: str):
         self.retcode = retcode
         self.stdout = stdout
         self.stderr = stderr
+        self.cmd = cmd
 
 async def run_subprocess(cmd: list[str]) -> ProcRet:
     logger.debug(f"Running command: {' '.join(cmd)}")
@@ -32,7 +33,7 @@ async def run_subprocess(cmd: list[str]) -> ProcRet:
         logger.error(msg="stderr:")
         logger.error(msg=stderr.decode())
 
-    return ProcRet(retcode, stdout.decode().rstrip(), stderr.decode().rstrip())
+    return ProcRet(retcode, stdout.decode().rstrip(), stderr.decode().rstrip(), " ".join(cmd))
 
 async def cp(src: str, dst: str, args: list[str] = []) -> ProcRet:
     commonArgs = [

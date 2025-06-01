@@ -1,18 +1,32 @@
 {
-  dockerTools,
+  bash,
   buildEnv,
   coreutils,
+  dockerTools,
   fish,
+  git,
   nix,
+  writeTextFile,
   ...
 }:
 let
+  nixConf = writeTextFile {  
+    name = "nixConfig";
+    text = builtins.readFile ./nix.conf;
+    destination = "/etc/nix/nix.conf";
+  };
   env = buildEnv {
     name = "containerEnv";
     paths = [
-      nix
+      bash
       coreutils
+      dockerTools.binSh
+      dockerTools.caCertificates
+      dockerTools.fakeNss
       fish
+      git
+      nix
+      nixConf
     ];
   };
 in

@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "csi"
+version = "0.1.0"
+description = "CSI driver spec for Python"
+authors = [
+    { name="Carl Andersson", email="carl@postspace.net" }
+]
+readme = "README.md"
+requires-python = ">=3.7"
+license = { text = "MIT" }
+dependencies = []
