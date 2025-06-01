@@ -47,7 +47,7 @@
                   set --export --prepend PATH $i/bin
                 end
                 echo $PATH
-                exec ${lib.getExe self.packages.${pkgs.system}.knix-csi-node-py}
+                exec ${lib.getExe self.packages.${pkgs.system}.knix-csi-node-py} $argv
               '';
           knix-csi-node-py =
             pkgs.writeScriptBin "knix-csi-node" # python
