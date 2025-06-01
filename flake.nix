@@ -40,18 +40,7 @@
           inherit kopf csi-proto-python;
         };
 
-        ourPython = pkgs.python3.withPackages (
-          p: with p; [
-            knix-csi
-            kubernetes-asyncio
-            pyzmq
-            fastapi
-            hypercorn
-            grpclib
-            self.packages.${pkgs.system}.certbuilder
-            self.packages.${pkgs.system}.csi-proto-python
-          ]
-        );
+        ourPython = pkgs.python3.withPackages (p: [ knix-csi ]);
       in
       {
         packages = {
@@ -63,16 +52,6 @@
               pkgs.skopeo
             ];
           };
-          # knix-csi = pkgs.buildEnv {
-          #   name = "repoenv";
-          #   paths = [
-          #     knix-csi
-          #     pkgs.kubectl
-          #     pkgs.util-linux
-          #     pkgs.rsync
-          #   ];
-          #   meta.mainProgram = "knix-csi";
-          # };
           knix-csi = knix-csi;
         };
         legacyPackages = import nixpkgs { inherit system; };

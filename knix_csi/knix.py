@@ -7,7 +7,9 @@ import json
 import argparse
 import threading
 import kopf
-
+import hashlib
+import re
+import shutil
 
 from pathlib import Path
 from typing import Any, Optional
@@ -114,29 +116,37 @@ class ControllerServicer(csi_grpc.ControllerBase):
 
         volume_id = request.name
         capacity_bytes = request.capacity_range.required_bytes if request.capacity_range else 0
+
+        pvcName = None
+        pvcNamespace = None
+        for k, v in request.parameters.items():
+            if k == "csi.storage.k8s.io/pvc/name":
+                pvcName = v
+            if k == "csi.storage.k8s.io/pvc/namespace":
+                pvcNamespace = v
+
+        if pvcName is None or pvcNamespace is None:
+            error = f"Could not extract PVC name and namespace. Make sure --extra-create-metadata is configured on external-provisioner"
+            logger.error(msg=error)
+            raise GRPCError(
+                Status.INTERNAL,
+                error,
+            )
         
         pvcResult = await helpers.run_subprocess([
             "kubectl",
-            "--all-namespaces",
+            f"--namespace={pvcNamespace}",
             "--output=json",
             "get",
             "persistentvolumeclaims",
+            pvcName
         ])
         if pvcResult.retcode != 0:
-            log_cmderror(pvcResult)
+            return
 
-        pvc = None
-        try:
-            for i in json.loads(pvcResult.stdout)["items"]:
-                if i["metadata"]["uid"] in request.name:
-                    pvc = i
-                    break
-                break
-        except KeyError:
-            logger.info("KeyError")
-            pass
+        pvcSpec = json.loads(pvcResult.stdout)
 
-        if pvc is None:
+        if pvcSpec is None:
             error = f"Failed to find PVC with volumeName {request.name}"
             logger.error(msg=error)
             raise GRPCError(
@@ -146,9 +156,9 @@ class ControllerServicer(csi_grpc.ControllerBase):
 
         exprName = None
         try:
-            exprName = pvc["metadata"]["annotations"]["knix-expr"]
-        except KeyError:
-            error = f"Failed to get knix-expr annotation from PVC {pvc["metadata"]["name"]}{request.name}"
+            exprName = pvcSpec["metadata"]["annotations"]["knix-expr"]
+        except Exception:
+            error = f"Failed to get knix-expr annotation from PVC {pvcSpec["metadata"]["name"]}{request.name}"
             logger.error(msg=error)
             raise GRPCError(
                 Status.INTERNAL,
@@ -157,6 +167,7 @@ class ControllerServicer(csi_grpc.ControllerBase):
 
         exprResult = await helpers.run_subprocess([
             "kubectl",
+            f"--namespace={pvcNamespace}",
             "--output=json",
             "get",
             "expressions.knix.cool",
@@ -197,26 +208,16 @@ class ControllerServicer(csi_grpc.ControllerBase):
             raise ValueError("DeleteVolumeRequest is None")
         log_request("DeleteVolume", request)
 
+        # Implement host garbage collection
+
         reply = csi_pb2.DeleteVolumeResponse()
         await stream.send_message(reply)
 
     async def ControllerPublishVolume(self, stream):
-        request: csi_pb2.ControllerPublishVolumeRequest | None = await stream.recv_message()
-        if request is None:
-            raise ValueError("ControllerPublishVolumeRequest is None")
-        log_request("ControllerPublishVolume", request)
-        reply = csi_pb2.ControllerPublishVolumeResponse(
-            publish_context={"expr": "PLACEHOLDER"}
-        )
-        await stream.send_message(reply)
+        raise Exception("ControllerPublishVolume not implemented")
 
     async def ControllerUnpublishVolume(self, stream):
-        request: csi_pb2.ControllerUnpublishVolumeRequest | None = await stream.recv_message()
-        if request is None:
-            raise ValueError("ControllerUnpublishVolumeRequest is None")
-        log_request("ControllerUnpublishVolume", request)
-        reply = csi_pb2.ControllerUnpublishVolumeResponse()
-        await stream.send_message(reply)
+        raise Exception("ControllerUnpublishVolume not implemented")
 
     async def ValidateVolumeCapabilities(self, stream):
         request: csi_pb2.ValidateVolumeCapabilitiesRequest | None = await stream.recv_message()
@@ -240,39 +241,10 @@ class ControllerServicer(csi_grpc.ControllerBase):
         await stream.send_message(reply)
 
     async def ListVolumes(self, stream):
-        request: csi_pb2.ListVolumesRequest | None = await stream.recv_message()
-        if request is None:
-            raise ValueError("ListVolumesRequest is None")
-        log_request("ListVolumes", request)
-        entries = []
-        if os.path.exists("/nix/var/knix"):
-            for volume_id in os.listdir("/nix/var/knix"):
-                volume_path = os.path.join("/nix/var/knix", volume_id)
-                if os.path.isdir(volume_path):
-                    entries.append(
-                        csi_pb2.ListVolumesResponse.Entry(
-                            volume=csi_pb2.Volume(
-                                volume_id=volume_id,
-                                # volume_context={"hostPath": volume_path}
-                            )
-                        )
-                    )
-
-        reply = csi_pb2.ListVolumesResponse(
-            entries=entries,
-            next_token=""
-        )
-        await stream.send_message(reply)
+        raise Exception("ListVolumes not implemented")
 
     async def GetCapacity(self, stream):
-        request: csi_pb2.GetCapacityRequest | None = await stream.recv_message()
-        if request is None:
-            raise ValueError("GetCapacityRequest is None")
-        log_request("GetCapacity", request)
-        reply = csi_pb2.GetCapacityResponse(
-            available_capacity=2**40  # 1 TB
-        )
-        await stream.send_message(reply)
+        raise Exception("GetCapacity not implemented")
 
     async def ControllerGetCapabilities(self, stream):
         request: csi_pb2.ControllerGetCapabilitiesRequest | None = await stream.recv_message()
@@ -286,46 +258,21 @@ class ControllerServicer(csi_grpc.ControllerBase):
                         type=csi_pb2.ControllerServiceCapability.RPC.CREATE_DELETE_VOLUME
                     )
                 ),
-                csi_pb2.ControllerServiceCapability(
-                    rpc=csi_pb2.ControllerServiceCapability.RPC(
-                        type=csi_pb2.ControllerServiceCapability.RPC.LIST_VOLUMES
-                    )
-                ),
             ]
         )
         await stream.send_message(reply)
 
     async def CreateSnapshot(self, stream):
-        request: csi_pb2.CreateSnapshotRequest | None = await stream.recv_message()
-        if request is None:
-            raise ValueError("CreateSnapshotRequest is None")
-        log_request("CreateSnapshot", request)
-        reply = csi_pb2.CreateSnapshotResponse()
-        await stream.send_message(reply)
+        raise Exception("CreateSnapshot not implemented")
 
     async def DeleteSnapshot(self, stream):
-        request: csi_pb2.DeleteSnapshotRequest | None = await stream.recv_message()
-        if request is None:
-            raise ValueError("DeleteSnapshotRequest is None")
-        log_request("DeleteSnapshot", request)
-        reply = csi_pb2.DeleteSnapshotResponse()
-        await stream.send_message(reply)
+        raise Exception("DeleteSnapshot not implemented")
 
     async def ListSnapshots(self, stream):
-        request: csi_pb2.ListSnapshotsRequest | None = await stream.recv_message()
-        if request is None:
-            raise ValueError("ListSnapshotsRequest is None")
-        log_request("ListSnapshots", request)
-        reply = csi_pb2.ListSnapshotsResponse(entries=[], next_token="")
-        await stream.send_message(reply)
+        raise Exception("ListSnapshots not implemented")
 
     async def ControllerExpandVolume(self, stream):
-        request: csi_pb2.ControllerExpandVolumeRequest | None = await stream.recv_message()
-        if request is None:
-            raise ValueError("ControllerExpandVolumeRequest is None")
-        log_request("ControllerExpandVolume", request)
-        reply = csi_pb2.ControllerExpandVolumeResponse()
-        await stream.send_message(reply)
+        raise Exception("ControllerExpandVolume not implemented")
 
     async def ControllerGetVolume(self, stream):
         request: csi_pb2.ControllerGetVolumeRequest | None = await stream.recv_message()
@@ -335,7 +282,6 @@ class ControllerServicer(csi_grpc.ControllerBase):
         reply = csi_pb2.ControllerGetVolumeResponse(
             volume=csi_pb2.Volume(
                 volume_id=request.volume_id,
-                # volume_context={"expr": "PLACEHOLDER"}
             )
         )
         await stream.send_message(reply)
@@ -357,12 +303,18 @@ class NodeServicer(csi_grpc.NodeBase):
 
         logger.debug(msg=f"Looking for Nix expression in volume_context, volume_id: {request.volume_id}")
         expr = None
+        name = None
+        namespace = None
         for k,v in request.volume_context.items():
             if k == "expr":
-                logger.info(msg=f"Got expression {v}")
                 expr = v
+            if k == "csi.storage.k8s.io/pod.name":
+                name = v
+            if k == "csi.storage.k8s.io/pod.namespace":
+                namespace = v
 
-        if expr is None:
+        if expr is None or name is None or namespace is None:
+            error = f"Could not extract (OR) expr, name, namespace. Make sure --extra-create-metadata is configured on external-provisioner"
             error = f"Failed to get expr from volume_context"
             logger.error(msg=error)
             raise GRPCError(
@@ -371,7 +323,18 @@ class NodeServicer(csi_grpc.NodeBase):
             )
 
         logger.debug(msg=f"Realizing Nix expression: {expr}, volume_id: {request.volume_id}")
-        realizeRes = await realizeExpr(expr)
+        realizeRes = str(await realizeExpr(expr))
+
+        gcRootsPath =  Path("/nix/var/knix/gcroots.json")
+        if not gcRootsPath.exists():
+            gcRootsPath.write_text(json.dumps([]))
+
+        gcRootsList: list = json.loads(gcRootsPath.read_text())
+        gcRootsList.append({
+            "packageName": realizeRes,
+            "targetPath": request.target_path
+        })
+        gcRootsPath.write_text(json.dumps(gcRootsList))
 
         logger.debug(msg=f"Creating {request.target_path} if it doesn't exist")
         await helpers.run_subprocess([
@@ -404,30 +367,47 @@ class NodeServicer(csi_grpc.NodeBase):
             "--verbose",
             request.target_path,
         ])
-        logger.debug(msg=f"Removing /nix/var/knix/{request.volume_id}")
-        await helpers.run_subprocess([
-            "rm",
-            "--recursive",
-            "--force",
-            f"/nix/var/knix/{request.volume_id}"
-        ])
-        logger.debug(msg=f"Unlinking /nix/var/nix/gcroots/{request.volume_id}")
-        await helpers.run_subprocess([
-            "unlink",
-            f"/nix/var/nix/gcroots/{request.volume_id}"
-        ])
-        logger.debug(msg=f"Running garbage collection")
-        gcResult = await helpers.run_subprocess([
-            "nix",
-            "store",
-            "gc",
-            "--dry-run",
-            "--debug",
-        ])
 
-        logger.debug(msg=f"nix store gc output:")
-        logger.debug(msg=f"stdout: {gcResult.stdout}")
-        logger.debug(msg=f"stderr: {gcResult.stderr}")
+        # Initialize gcroots.json database
+        gcRootsPath =  Path("/nix/var/knix/gcroots.json")
+        if not gcRootsPath.exists():
+            gcRootsPath.write_text(json.dumps([]))
+        gcRootsList: list = json.loads(gcRootsPath.read_text())
+        # Remove gcRoot for the volume we're dismounting now
+        gcRootsList = list(filter(lambda x: x["targetPath"] != request.target_path, gcRootsList))
+        # Remove gcRoot for targetPaths that doesn't exist anymore
+        gcRootsList = list(filter(lambda x: Path(x["targetPath"]).exists(), gcRootsList))
+        # Write gcRoots database back to disk
+        gcRootsPath.write_text(json.dumps(gcRootsList))
+        # Get all valid gcRoot names
+        validRootNames = [d['packageName'] for d in gcRootsList]
+
+        # Loop the directories we wanna clean and remove anything that doesn't belog
+        for cleanPath in [ "/nix/var/nix/gcroots", "/nix/var/knix" ]:
+            for gcRoot in Path(cleanPath).iterdir():
+                name = str(gcRoot).removeprefix("/nix/var/nix/gcroots/").removeprefix("/nix/var/knix/")
+                # Make sure it looks like a package before removing it
+                if not bool(re.match(r'^[a-z0-9]{32}-[^-]+-', name)):
+                    continue
+                # Check that we're not one of the valid path and remove otherwise
+                if name not in validRootNames:
+                    logger.info(msg=f"Removing {gcRoot}")
+                    await helpers.run_subprocess([
+                        "rm",
+                        "--recursive",
+                        "--force",
+                        str(gcRoot),
+                    ])
+
+
+        # Move this to a scheduler and look further into if there's an easy way
+        # to estimate how much garbage-collecting will reclaim.
+        # logger.info(msg=f"Collecting garbage")
+        # await helpers.run_subprocess([
+        #     "nix",
+        #     "store",
+        #     "gc",
+        # ])
 
         reply = csi_pb2.NodeUnpublishVolumeResponse()
         await stream.send_message(reply)
@@ -437,15 +417,7 @@ class NodeServicer(csi_grpc.NodeBase):
         if request is None:
             raise ValueError("NodeGetCapabilitiesRequest is None")
         log_request("NodeGetCapabilities", request)
-        reply = csi_pb2.NodeGetCapabilitiesResponse(
-            capabilities=[
-                # csi_pb2.NodeServiceCapability(
-                #     rpc=csi_pb2.NodeServiceCapability.RPC(
-                #         type=csi_pb2.NodeServiceCapability.RPC.STAGE_UNSTAGE_VOLUME
-                #     )
-                # ),
-            ]
-        )
+        reply = csi_pb2.NodeGetCapabilitiesResponse()
         await stream.send_message(reply)
 
     async def NodeGetInfo(self, stream):
@@ -453,59 +425,25 @@ class NodeServicer(csi_grpc.NodeBase):
         if request is None:
             raise ValueError("NodeGetInfoRequest is None")
         log_request("NodeGetInfo", request)
-        # reply = csi_pb2.NodeGetInfoResponse(
-        #     node_id=str(KUBE_NODE_NAME),
-        #     accessible_topology=csi_pb2.Topology(
-        #         segments={
-        #             "topology.knix.csi/node": str(KUBE_NODE_NAME)
-        #         }
-        #     ),
-        # )
         reply = csi_pb2.NodeGetInfoResponse(
             node_id=str(KUBE_NODE_NAME),
         )
         await stream.send_message(reply)
 
     async def NodeGetVolumeStats(self, stream):
-        request: csi_pb2.NodeGetVolumeStatsRequest | None = await stream.recv_message()
-        if request is None:
-            raise ValueError("NodeGetVolumeStatsRequest is None")
-        log_request("NodeGetVolumeStats", request)
-        reply = csi_pb2.NodeGetVolumeStatsResponse()
-        await stream.send_message(reply)
-
+        raise Exception("NodeGetVolumeStats not implemented")
     async def NodeExpandVolume(self, stream):
-        request: csi_pb2.NodeExpandVolumeRequest | None = await stream.recv_message()
-        if request is None:
-            raise ValueError("NodeExpandVolumeRequest is None")
-        log_request("NodeExpandVolume", request)
-        reply = csi_pb2.NodeExpandVolumeResponse()
-        await stream.send_message(reply)
-
+        raise Exception("NodeExpandVolume not implemented")
     async def NodeStageVolume(self, stream):
-        request: csi_pb2.NodeStageVolumeRequest | None = await stream.recv_message()
-        if request is None:
-            raise ValueError("NodeStageVolumeRequest is None")
-        log_request("NodeStageVolume", request)
-        reply = csi_pb2.NodeStageVolumeResponse()
-        await stream.send_message(reply)
-
+        raise Exception("NodeStageVolume not implemented")
     async def NodeUnstageVolume(self, stream):
-        request: csi_pb2.NodeUnstageVolumeRequest | None = await stream.recv_message()
-        if request is None:
-            raise ValueError("NodeUnstageVolumeRequest is None")
-        log_request("NodeUnstageVolume", request)
-        reply = csi_pb2.NodeUnstageVolumeResponse()
-        await stream.send_message(reply)
+        raise Exception("NodeUnstageVolume not implemented")
 
 async def serve(args: argparse.Namespace, sock_path="/csi/csi.sock"):
     try:
         os.unlink(sock_path)
     except FileNotFoundError:
         pass
-
-
-    logger.error(msg=args)
 
     tasks = list()
     server = Server([

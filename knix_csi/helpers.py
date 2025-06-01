@@ -2,8 +2,11 @@
 
 import asyncio
 import logging
+import json
 
 logger = logging.getLogger("helpers")
+
+CRDNAME = "expressions.knix.cool"
 
 class ProcRet:
     def __init__(self, retcode: int, stdout: str, stderr: str, cmd: str):
@@ -49,17 +52,13 @@ async def cp(src: str, dst: str, args: list[str] = []) -> ProcRet:
 
     return result
 
-async def rsync(src: str, dst: str, args: list[str] = []) -> ProcRet:
-    result = await run_subprocess([
-        "rsync",
-        "--archive",
-        "--delete",
-        "--reflink=always",
-        src,
-        dst,        
-    ])
-
-    return result
+async def kubectlNS(op: str, name: str, namespace: str, args: list[str]):
+    return await run_subprocess([
+        "kubectl",
+        f"--namespace={namespace}",
+        "--output=json",
+        op,
+    ], *args)
 
 # our cp command with --parents
 async def cpp(src: str, dst: str) -> ProcRet:
