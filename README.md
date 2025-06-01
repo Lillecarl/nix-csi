@@ -10,7 +10,7 @@ Once the controller has finished building and a pod has claimed the PVC we'll
 run the same build on the node to realize the expression as a volume.
 
 ## Beware
-This CSI doesn't care about hos a CSI should behave regarding backing storage.
+This CSI doesn't care about how a CSI should behave regarding backing storage.
 It'll happily mount two different backing areas into pods that think they are
 bound to the same PVC. This is so that new pods always get the latest expression
 from the expressions.knix.cool CRD.
@@ -19,6 +19,11 @@ And beware of bugs and unfinished sandwiches.
 
 ## TODO:
 * Testing (no unittests and mocking bogus)
-* Implement a good GC
+* Implement good GC on both node and controller
 * Consider if the CRD should be namespaced or not or both
-* Consider what happens when the CRD changes, the volume will stay the same.
+* Allow serving a binary cache from the controller
+* Allow configuring settings easier
+* Examples
+* Investigate alternatives to many subprocess calls
+* Implement/investigate guarantees for builds finishing on controller before going to node
+* Support different Nix versions
