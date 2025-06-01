@@ -40,7 +40,12 @@
           inherit kopf csi-proto-python;
         };
 
-        ourPython = pkgs.python3.withPackages (p: [ knix-csi ]);
+        ourPython = pkgs.python3.withPackages (p: with p; [
+          knix-csi
+          grpclib
+          kopf
+          csi-proto-python
+        ]);
       in
       {
         packages = {
