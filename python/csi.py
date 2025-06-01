@@ -64,7 +64,7 @@ async def realizeExpr(expr: str, volume_id: str) -> Optional[str]:
         if res.retcode != 0:
             return
     # Copy package to result folder (/nix/var/nix/result in container)
-    await helpers.cp(f"{packagePath}", f"{packageResultPath}")
+    await helpers.cp(f"{packagePath}/.", f"{packageResultPath}/")
         
     return packageName
 
