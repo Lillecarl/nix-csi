@@ -46,6 +46,9 @@
                 for i in $(nix build --no-link --print-out-paths --file /knix spkgs.util-linux)
                   set --export --prepend PATH $i/bin
                 end
+                for i in $(nix build --no-link --print-out-paths --file /knix spkgs.rsync)
+                  set --export --prepend PATH $i/bin
+                end
                 echo $PATH
                 exec ${lib.getExe self.packages.${pkgs.system}.knix-csi-node-py} $argv
               '';
