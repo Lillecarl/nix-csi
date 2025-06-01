@@ -71,6 +71,61 @@ async def realizeExpr(expr: str) -> Optional[str]:
     return packageName
 
 
+async def getExpressionFromPvc(name: str, namespace: str, request: Any):
+        pvcResult = await helpers.run_subprocess([
+            "kubectl",
+            f"--namespace={namespace}",
+            "--output=json",
+            "get",
+            "persistentvolumeclaims",
+            name
+        ])
+        if pvcResult.retcode != 0:
+            return
+
+        pvcSpec = json.loads(pvcResult.stdout)
+
+        if pvcSpec is None:
+            error = f"Failed to find PVC with volumeName {request.name}"
+            logger.error(msg=error)
+            raise GRPCError(
+                Status.INTERNAL,
+                error,
+            )
+
+        exprName = None
+        try:
+            exprName = pvcSpec["metadata"]["annotations"]["knix-expr"]
+        except Exception:
+            error = f"Failed to get knix-expr annotation from PVC {pvcSpec["metadata"]["name"]}{request.name}"
+            logger.error(msg=error)
+            raise GRPCError(
+                Status.INTERNAL,
+                error,
+            )
+
+        exprResult = await helpers.run_subprocess([
+            "kubectl",
+            f"--namespace={namespace}",
+            "--output=json",
+            "get",
+            "expressions.knix.cool",
+            exprName,
+        ])
+
+        if exprResult.retcode != 0:
+            error = f"Failed to get knix expression {exprName}"
+            logger.error(msg=error)
+            raise GRPCError(
+                Status.INTERNAL,
+                error,
+            )
+
+        expr = json.loads(exprResult.stdout)["data"]["expr"]
+        logger.info(msg=f"Found expression {exprName} with expression {expr}")
+        return expr
+
+
 class IdentityServicer(csi_grpc.IdentityBase):
     async def GetPluginInfo(self, stream):
         request: csi_pb2.GetPluginInfoRequest | None = await stream.recv_message()
@@ -132,70 +187,30 @@ class ControllerServicer(csi_grpc.ControllerBase):
                 Status.INTERNAL,
                 error,
             )
+
+        expr = await getExpressionFromPvc(pvcName, pvcNamespace, request)
+        if expr is None:
+            raise Exception("Couldn't find expression")
         
-        pvcResult = await helpers.run_subprocess([
-            "kubectl",
-            f"--namespace={pvcNamespace}",
-            "--output=json",
-            "get",
-            "persistentvolumeclaims",
-            pvcName
-        ])
-        if pvcResult.retcode != 0:
-            return
-
-        pvcSpec = json.loads(pvcResult.stdout)
-
-        if pvcSpec is None:
-            error = f"Failed to find PVC with volumeName {request.name}"
-            logger.error(msg=error)
-            raise GRPCError(
-                Status.INTERNAL,
-                error,
-            )
-
-        exprName = None
-        try:
-            exprName = pvcSpec["metadata"]["annotations"]["knix-expr"]
-        except Exception:
-            error = f"Failed to get knix-expr annotation from PVC {pvcSpec["metadata"]["name"]}{request.name}"
-            logger.error(msg=error)
-            raise GRPCError(
-                Status.INTERNAL,
-                error,
-            )
-
-        exprResult = await helpers.run_subprocess([
-            "kubectl",
-            f"--namespace={pvcNamespace}",
-            "--output=json",
-            "get",
-            "expressions.knix.cool",
-            exprName,
-        ])
-
-        if exprResult.retcode != 0:
-            error = f"Failed to get knix expression {exprName}"
-            logger.error(msg=error)
-            raise GRPCError(
-                Status.INTERNAL,
-                error,
-            )
-
-        expr = json.loads(exprResult.stdout)["data"]["expr"]
-
-        logger.info(msg=f"Found expression {exprName} with expression {expr}")
         buildResult = await helpers.build(expr)
         packageName = str(buildResult.stdout).removeprefix("/nix/store/").removesuffix("/")
+
+        # Install packages into gcroots on controller
+        await helpers.run_subprocess([
+            "nix-env",
+            "--profile",
+            f"/nix/var/nix/profiles/{packageName}",
+            "--set",
+            buildResult.stdout
+        ])
 
         reply = csi_pb2.CreateVolumeResponse(
             volume=csi_pb2.Volume(
                 volume_id=volume_id,
                 capacity_bytes=capacity_bytes,
                 volume_context={
-                    "expr": expr,
-                    "packageName": packageName,
-                    "exprName": exprName,
+                    "csi.storage.k8s.io/pvc/name": pvcName,
+                    "csi.storage.k8s.io/pvc/namespace": pvcNamespace,
                 },
                 accessible_topology=[],
             )
@@ -302,26 +317,26 @@ class NodeServicer(csi_grpc.NodeBase):
         log_request("NodePublishVolume", request)
 
         logger.debug(msg=f"Looking for Nix expression in volume_context, volume_id: {request.volume_id}")
-        expr = None
-        name = None
-        namespace = None
+        pvcName = None
+        pvcNamespace = None
         for k,v in request.volume_context.items():
-            if k == "expr":
-                expr = v
-            if k == "csi.storage.k8s.io/pod.name":
-                name = v
-            if k == "csi.storage.k8s.io/pod.namespace":
-                namespace = v
+            if k == "csi.storage.k8s.io/pvc/name":
+                pvcName = v
+            if k == "csi.storage.k8s.io/pvc/namespace":
+                pvcNamespace = v
 
-        if expr is None or name is None or namespace is None:
-            error = f"Could not extract (OR) expr, name, namespace. Make sure --extra-create-metadata is configured on external-provisioner"
-            error = f"Failed to get expr from volume_context"
+        if pvcName is None or pvcNamespace is None:
+            error = f"Could not extract PVC name and namespace. Make sure --extra-create-metadata is configured on external-provisioner"
             logger.error(msg=error)
             raise GRPCError(
                 Status.INTERNAL,
-                error
+                error,
             )
 
+        expr = await getExpressionFromPvc(pvcName, pvcNamespace, request)
+        if expr is None:
+            raise Exception("Couldn't find expression")
+        
         logger.debug(msg=f"Realizing Nix expression: {expr}, volume_id: {request.volume_id}")
         realizeRes = str(await realizeExpr(expr))
 
