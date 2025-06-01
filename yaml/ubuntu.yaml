@@ -6,7 +6,7 @@ metadata:
     knix-expr: hello
 spec:
   accessModes:
-    - ReadWriteOnce
+    - ReadWriteMany
   storageClassName: knix-csi
   resources:
     requests:
@@ -30,6 +30,7 @@ spec:
     volumeMounts:
     - name: knix-volume
       mountPath: /nix
+      readOnly: true
   volumes:
   - name: knix-volume
     persistentVolumeClaim:
