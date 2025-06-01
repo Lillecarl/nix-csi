@@ -439,7 +439,8 @@ class NodeServicer(csi_grpc.NodeBase):
     async def NodeUnstageVolume(self, stream):
         raise Exception("NodeUnstageVolume not implemented")
 
-async def serve(args: argparse.Namespace, sock_path="/csi/csi.sock"):
+async def serve(args: argparse.Namespace):
+    sock_path = "/csi/csi.sock"
     try:
         os.unlink(sock_path)
     except FileNotFoundError:
@@ -492,3 +493,4 @@ def my_handler(name, namespace, spec, old, new, diff, **_):
     logger.info(msg=new)
     logger.info(msg=diff)
     pass
+
