@@ -416,7 +416,7 @@ class NodeServicer(csi_grpc.NodeBase):
         request: csi_pb2.NodeGetCapabilitiesRequest | None = await stream.recv_message()
         if request is None:
             raise ValueError("NodeGetCapabilitiesRequest is None")
-        log_request("NodeGetCapabilities", request)
+        # log_request("NodeGetCapabilities", request)
         reply = csi_pb2.NodeGetCapabilitiesResponse()
         await stream.send_message(reply)
 
@@ -492,4 +492,3 @@ def my_handler(name, namespace, spec, old, new, diff, **_):
     logger.info(msg=new)
     logger.info(msg=diff)
     pass
-
