@@ -5,6 +5,9 @@ import socket
 import sys
 import json
 import argparse
+import threading
+import kopf
+
 
 from pathlib import Path
 from typing import Any, Optional
@@ -14,10 +17,7 @@ from grpclib.exceptions import GRPCError
 from grpclib.const import Status
 from csi import csi_grpc, csi_pb2
 
-# Hack importpath so we can reach helpers without building a package
-sys.path.insert(0, "/knix/python")
-
-import helpers
+from . import helpers
 
 logger = logging.getLogger("csi.driver")
 
@@ -32,7 +32,7 @@ KUBE_NODE_NAME = str(KUBE_NODE_NAME)
 def log_request(method_name: str, request: Any):
     logger.info("Received %s:\n%s", method_name, request)
 
-async def realizeExpr(expr: str, volume_id: str) -> Optional[str]:
+async def realizeExpr(expr: str) -> Optional[str]:
     buildResult = await helpers.build(expr)
 
     if buildResult.retcode != 0:
@@ -40,17 +40,17 @@ async def realizeExpr(expr: str, volume_id: str) -> Optional[str]:
     
     packageName = str(buildResult.stdout).removeprefix("/nix/store/").removesuffix("/")
     packagePath = buildResult.stdout
-    packageRefPath = f"/nix/var/knix/{volume_id}" 
+    packageRefPath = f"/nix/var/knix/{packageName}" 
     packageVarPath =  f"{packageRefPath}/nix/var"
     packageResultPath =  f"{packageRefPath}/nix/var/result"
 
 
     if Path(packageRefPath).is_dir():
-        logger.info(f"Package {packageName} is already realized at {packageRefPath}")
+        logger.info(f"Package {packageName} is already realized")
         return packageName
 
     # Link package to gcroots
-    await helpers.ln(packagePath, f"/nix/var/nix/gcroots/{volume_id}")
+    await helpers.ln(packagePath, f"/nix/var/nix/gcroots/{packageName}")
 
     pathInfoResult = await helpers.pathInfo(expr)
 
@@ -174,13 +174,18 @@ class ControllerServicer(csi_grpc.ControllerBase):
         expr = json.loads(exprResult.stdout)["data"]["expr"]
 
         logger.info(msg=f"Found expression {exprName} with expression {expr}")
-        await helpers.build(expr)
+        buildResult = await helpers.build(expr)
+        packageName = str(buildResult.stdout).removeprefix("/nix/store/").removesuffix("/")
 
         reply = csi_pb2.CreateVolumeResponse(
             volume=csi_pb2.Volume(
                 volume_id=volume_id,
                 capacity_bytes=capacity_bytes,
-                volume_context={"expr": expr},
+                volume_context={
+                    "expr": expr,
+                    "packageName": packageName,
+                    "exprName": exprName,
+                },
                 accessible_topology=[],
             )
         )
@@ -366,7 +371,7 @@ class NodeServicer(csi_grpc.NodeBase):
             )
 
         logger.debug(msg=f"Realizing Nix expression: {expr}, volume_id: {request.volume_id}")
-        realizeRes = await realizeExpr(expr, request.volume_id)
+        realizeRes = await realizeExpr(expr)
 
         logger.debug(msg=f"Creating {request.target_path} if it doesn't exist")
         await helpers.run_subprocess([
@@ -375,12 +380,12 @@ class NodeServicer(csi_grpc.NodeBase):
             request.target_path,
         ])
 
-        logger.debug(msg=f"Mounting /nix/var/knix/{request.volume_id} on {request.target_path}")
+        logger.debug(msg=f"Mounting /nix/var/knix/{realizeRes} on {request.target_path}")
         await helpers.run_subprocess([
             "mount",
             "--bind",
             "--verbose",
-            f"/nix/var/knix/{request.volume_id}/nix",
+            f"/nix/var/knix/{realizeRes}/nix",
             request.target_path,
         ])
 
@@ -493,47 +498,60 @@ class NodeServicer(csi_grpc.NodeBase):
         reply = csi_pb2.NodeUnstageVolumeResponse()
         await stream.send_message(reply)
 
-async def serve(sock_path="/csi/csi.sock"):
+async def serve(args: argparse.Namespace, sock_path="/csi/csi.sock"):
     try:
         os.unlink(sock_path)
     except FileNotFoundError:
         pass
+
+
+    logger.error(msg=args)
+
+    tasks = list()
+    server = Server([
+        IdentityServicer(),
+        ControllerServicer(),
+        NodeServicer(),
+    ])
+
+    if getattr(args, "node"):
+        server = Server([
+            IdentityServicer(),
+            NodeServicer(),
+        ])
+    if getattr(args, "controller"):
+        server = Server([
+            IdentityServicer(),
+            ControllerServicer(),
+        ])
+        thread = threading.Thread(target=kopf_thread)
+        thread.start()
+        tasks.append(asyncio.to_thread(thread.join))
+
 
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.bind(sock_path)
     sock.listen(128)
     sock.setblocking(False)
 
-    server = Server([
-        IdentityServicer(),
-        ControllerServicer(),
-        NodeServicer(),
-    ])
-    await server.start(sock=sock)
+    tasks.append(server.start(sock=sock))
+
+    await asyncio.gather(*tasks)
     logger.info(f"CSI driver (grpclib) listening on unix://{sock_path}")
     await server.wait_closed()
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="knix CSI Driver")
-    parser.add_argument(
-        "--loglevel",
-        default="INFO",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        help="Set the logging level (default: INFO)"
-    )
-    return parser.parse_args()
+def kopf_thread():
+    asyncio.run(kopf.operator())
 
-if __name__ == "__main__":
-    args = parse_args()
-    logging.basicConfig(
-        level=getattr(logging, args.loglevel),
-        format="%(asctime)s %(levelname)s [%(name)s] %(message)s"
-    )
-    loglevel_str = logging.getLevelName(logger.getEffectiveLevel())
-    logger.info(f"Current log level: {loglevel_str}")
+@kopf.on.update('expressions.knix.cool') # type: ignore
+def my_handler(name, namespace, spec, old, new, diff, **_):
+    # Build expression as soon as it's available
+    logger.info(msg=f"Expression updated")
+    logger.info(msg=name)
+    logger.info(msg=namespace)
+    logger.info(msg=spec)
+    logger.info(msg=old)
+    logger.info(msg=new)
+    logger.info(msg=diff)
+    pass
 
-    # Don't log hpack stuff
-    hpacklogger = logging.getLogger("hpack.hpack")
-    hpacklogger.setLevel(logging.INFO)
-
-    asyncio.run(serve())
