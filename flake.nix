@@ -40,15 +40,9 @@
             pkgs.writeScriptBin "knix-csi-node" # fish
               ''
                 #! ${lib.getExe pkgs.fish}
-                for i in $(nix build --no-link --print-out-paths --file /knix spkgs.kubectl)
-                  set --export --prepend PATH $i/bin
-                end
-                for i in $(nix build --no-link --print-out-paths --file /knix spkgs.util-linux)
-                  set --export --prepend PATH $i/bin
-                end
-                for i in $(nix build --no-link --print-out-paths --file /knix spkgs.rsync)
-                  set --export --prepend PATH $i/bin
-                end
+                set --export --prepend PATH $(nix build --no-link --print-out-paths --file /knix spkgs.kubectl.outPath)/bin
+                set --export --prepend PATH $(nix build --no-link --print-out-paths --file /knix spkgs.util-linux.outPath)/bin
+                set --export --prepend PATH $(nix build --no-link --print-out-paths --file /knix spkgs.rsync.outPath)/bin
                 echo $PATH
                 exec ${lib.getExe self.packages.${pkgs.system}.knix-csi-node-py} $argv
               '';
