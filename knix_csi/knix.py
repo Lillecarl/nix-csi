@@ -317,6 +317,9 @@ class ControllerServicer(csi_grpc.ControllerBase):
 
 
 class NodeServicer(csi_grpc.NodeBase):
+    def __init__(self, expressionQueue: asyncio.Queue[str]):
+        self.expressionQueue = expressionQueue
+
     async def NodePublishVolume(self, stream):
         request: csi_pb2.NodePublishVolumeRequest | None = await stream.recv_message()
         if request is None:
@@ -335,38 +338,49 @@ class NodeServicer(csi_grpc.NodeBase):
             raise Exception("Couldn't find expression")
 
         logger.debug(
-            msg=f"Realizing Nix expression: {expr}, volume_id: {request.volume_id}"
+            msg=f"Evaluating Nix expression: {expr}, volume_id: {request.volume_id}"
         )
-        realizeRes = str(await realizeExpr(expr))
 
-        gcRootsPath = Path("/nix/var/knix/gcroots.json")
-        if not gcRootsPath.exists():
-            gcRootsPath.write_text(json.dumps([]))
-
-        gcRootsList: list = json.loads(gcRootsPath.read_text())
-        gcRootsList.append(
-            {"packageName": realizeRes, "targetPath": request.target_path}
+        evalRes = await helpers.run_subprocess(
+            ["nix", "eval", "--impure", "--raw", "--expr", expr]
         )
-        gcRootsPath.write_text(json.dumps(gcRootsList))
 
-        logger.debug(msg=f"Creating {request.target_path} if it doesn't exist")
-        await helpers.run_subprocess(
-            [
-                "mkdir",
-                "--parents",
-                request.target_path,
-            ]
-        )
+        if evalRes.retcode != 0:
+            error = f"Failed to evaluate {expr}"
+            logger.error(msg=error)
+            raise GRPCError(
+                Status.INTERNAL,
+                error,
+            )
+
+        await self.expressionQueue.put(expr)
+
+        packageName = str(evalRes.stdout).removeprefix("/nix/store/").removesuffix("/")
+
+        while not Path(f"/nix/var/knix/{packageName}").exists():
+            for i in range(10):
+                if i == 0:
+                    logger.info(
+                        msg=f"Package {packageName} is not realized yet. Waiting 10 seconds."
+                    )
+                await asyncio.sleep(1)
+
+        if not Path(request.target_path).exists():
+            logger.debug(
+                msg=f"Creating {request.target_path} where store will be mounted"
+            )
+            Path(request.target_path).mkdir(parents=True, exist_ok=True)
 
         logger.debug(
-            msg=f"Mounting /nix/var/knix/{realizeRes} on {request.target_path}"
+            msg=f"Mounting /nix/var/knix/{packageName} on {request.target_path}"
         )
+        await helpers.mkdir(request.target_path)
         await helpers.run_subprocess(
             [
                 "mount",
                 "--bind",
                 "--verbose",
-                f"/nix/var/knix/{realizeRes}/nix",
+                f"/nix/var/knix/{packageName}/nix",
                 request.target_path,
             ]
         )
@@ -392,6 +406,7 @@ class NodeServicer(csi_grpc.NodeBase):
         # Initialize gcroots.json database
         gcRootsPath = Path("/nix/var/knix/gcroots.json")
         if not gcRootsPath.exists():
+            gcRootsPath.parent.mkdir(parents=True)
             gcRootsPath.write_text(json.dumps([]))
         gcRootsList: list = json.loads(gcRootsPath.read_text())
         # Remove gcRoot for the volume we're dismounting now
@@ -454,16 +469,6 @@ class NodeServicer(csi_grpc.NodeBase):
                         type=csi_pb2.NodeServiceCapability.RPC.STAGE_UNSTAGE_VOLUME
                     )
                 ),
-                csi_pb2.NodeServiceCapability(
-                    rpc=csi_pb2.NodeServiceCapability.RPC(
-                        type=csi_pb2.NodeServiceCapability.RPC.VOLUME_CONDITION
-                    )
-                ),
-                csi_pb2.NodeServiceCapability(
-                    rpc=csi_pb2.NodeServiceCapability.RPC(
-                        type=csi_pb2.NodeServiceCapability.RPC.GET_VOLUME_STATS
-                    )
-                ),
             ]
         )
         await stream.send_message(reply)
@@ -472,21 +477,14 @@ class NodeServicer(csi_grpc.NodeBase):
         request: csi_pb2.NodeGetInfoRequest | None = await stream.recv_message()
         if request is None:
             raise ValueError("NodeGetInfoRequest is None")
-        log_request("NodeGetInfo", request)
+        # log_request("NodeGetInfo", request)
         reply = csi_pb2.NodeGetInfoResponse(
             node_id=str(KUBE_NODE_NAME),
         )
         await stream.send_message(reply)
 
     async def NodeGetVolumeStats(self, stream):
-        request: csi_pb2.NodeGetVolumeStatsRequest | None = await stream.recv_message()
-        if request is None:
-            raise ValueError("NodeGetVolumeStats is None")
-        log_request("NodeGetInfo", request)
-        reply = csi_pb2.NodeGetVolumeStatsResponse(
-            volume_condition=csi_pb2.VolumeCondition(abnormal=False, message="HEJHEJ")
-        )
-        await stream.send_message(reply)
+        raise Exception("NodeGetVolumeStats not implemented")
 
     async def NodeExpandVolume(self, stream):
         raise Exception("NodeExpandVolume not implemented")
@@ -498,26 +496,20 @@ class NodeServicer(csi_grpc.NodeBase):
         raise Exception("NodeUnstageVolume not implemented")
 
 
-async def serve(args: argparse.Namespace):
+async def serve(args: argparse.Namespace, expressionQueue: asyncio.Queue[str]):
     sock_path = "/csi/csi.sock"
     try:
         os.unlink(sock_path)
     except FileNotFoundError:
         pass
 
-    server = Server(
-        [
-            IdentityServicer(),
-            ControllerServicer(),
-            NodeServicer(),
-        ]
-    )
+    server = Server([])
 
     if getattr(args, "node"):
         server = Server(
             [
                 IdentityServicer(),
-                NodeServicer(),
+                NodeServicer(expressionQueue),
             ]
         )
     if getattr(args, "controller"):

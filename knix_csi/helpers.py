@@ -16,10 +16,10 @@ class ProcRet:
         self.stderr = stderr
         self.cmd = cmd
 
-
 # simple subprocess function with automatic error printing
-async def run_subprocess(cmd: list[str]) -> ProcRet:
-    logger.debug(f"Running command: {' '.join(cmd)}")
+async def run_subprocess(cmd: list[str], silent=False) -> ProcRet:
+    if not silent:
+        logger.debug(f"Running command: {' '.join(cmd)}")
     proc = await asyncio.create_subprocess_exec(
         *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )
@@ -43,7 +43,7 @@ async def run_subprocess(cmd: list[str]) -> ProcRet:
 
 
 # subprocess cp
-async def cp(src: str, dst: str, args: list[str] = []) -> ProcRet:
+async def cp(src: str, dst: str, args: list[str] = [], silent=False) -> ProcRet:
     commonArgs = [
         "cp",
         "--recursive",
@@ -51,7 +51,7 @@ async def cp(src: str, dst: str, args: list[str] = []) -> ProcRet:
         "--archive",
     ]
 
-    result = await run_subprocess(commonArgs + args + [src, dst])
+    result = await run_subprocess(commonArgs + args + [src, dst], silent=silent)
 
     return result
 
@@ -68,7 +68,7 @@ async def kubectlNS(namespace: str, args: list[str]):
 
 # our cp command with --parents
 async def cpp(src: str, dst: str) -> ProcRet:
-    return await cp(src, dst, ["--parents"])
+    return await cp(src, dst, ["--parents"], silent=True)
 
 
 async def ln(pointer: str, symlink: str) -> ProcRet:

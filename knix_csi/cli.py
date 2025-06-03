@@ -1,3 +1,4 @@
+from collections import deque
 import os
 import asyncio
 import logging
@@ -26,6 +27,26 @@ def parse_args():
 def kopf_thread():
     asyncio.run(kopf.operator())
 
+async def expressionQueueWorker(expressionQueue: asyncio.Queue[str]):
+    logger = logging.getLogger("knix-csi")
+    expressionDeque: deque[str] = deque()
+    try:
+        while True:
+            expressionDeque.append(await expressionQueue.get())
+            seen = set()
+            newExpressionDeque = deque()
+            for item in expressionDeque:
+                if item not in seen:
+                    seen.add(item)
+                    newExpressionDeque.append(item)
+            expressionDeque = newExpressionDeque
+
+            for expr in expressionDeque:
+                logger.info(f"Building Nix expression: {expr}")
+                await knix.realizeExpr(expr)
+
+    except asyncio.CancelledError:
+        pass
 
 async def main_async():
     args = parse_args()
@@ -41,14 +62,18 @@ async def main_async():
     hpacklogger = logging.getLogger("hpack.hpack")
     hpacklogger.setLevel(logging.INFO)
 
+    expressionQueue: asyncio.Queue[str] = asyncio.Queue()
+
     tasks = list()
 
     if getattr(args, "controller"):
         thread = threading.Thread(target=kopf_thread)
         thread.start()
         tasks.append(asyncio.to_thread(thread.join))
+    if getattr(args, "node"):
+        tasks.append(expressionQueueWorker(expressionQueue))
 
-    tasks.append(knix.serve(args))
+    tasks.append(knix.serve(args, expressionQueue))
 
     await asyncio.gather(*tasks)
 
