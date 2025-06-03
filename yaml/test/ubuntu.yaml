@@ -1,0 +1,43 @@
+# apiVersion: v1
+# kind: PersistentVolumeClaim
+# metadata:
+#   name: knix-volume
+#   annotations:
+#     knix-expr: hello
+# spec:
+#   accessModes:
+#     - ReadWriteMany
+#   storageClassName: knix-csi
+#   volumeName: knixtest
+#   resources:
+#     requests:
+#       storage: 1M
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    run: ubuntu
+  annotations:
+    knix-expr: hello
+  name: ubuntu1
+spec:
+  containers:
+  - command:
+    - sleep
+    - infinity
+    image: ubuntu:22.04
+    name: ubuntu
+    volumeMounts:
+    - name: knix-volume
+      mountPath: /nix
+      readOnly: true
+  volumes:
+  # - name: knix-volume
+  #   persistentVolumeClaim:
+  #     claimName: knix-volume
+  - name: knix-volume
+    csi:
+      driver: knix.csi.store
+      volumeAttributes:
+        expr: "(import /knix/default.nix).spkgs.bash.outPath"

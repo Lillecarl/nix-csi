@@ -52,13 +52,14 @@ async def cp(src: str, dst: str, args: list[str] = []) -> ProcRet:
 
     return result
 
-async def kubectlNS(op: str, name: str, namespace: str, args: list[str]):
-    return await run_subprocess([
+async def kubectlNS(namespace: str, args: list[str]):
+    base = [
         "kubectl",
         f"--namespace={namespace}",
         "--output=json",
-        op,
-    ], *args)
+    ]
+    final = base + args
+    return await run_subprocess(final)
 
 # our cp command with --parents
 async def cpp(src: str, dst: str) -> ProcRet:

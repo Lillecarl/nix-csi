@@ -95,18 +95,18 @@ pkgs.dockerTools.streamLayeredImage {
     folders
     miniPaths
   ];
+  maxLayers = 125;
   config = {
     Env = [
       "USER=nix"
       "HOME=/home/nix"
-      "PATH=/bin:/run/current-system/bin:${miniEnv}/bin"
+      "PATH=${miniEnv}/bin:/bin:/run/current-system/bin"
       "EDITOR=hx"
     ];
     WorkingDir = "/home/nix";
-    # fakeRootCommands = ''
-    #   ln --symbolic ${env}/bin /run/current-system
-    #   ln --symbolic ${env} /nix/var/gcroots/booted-system
-    #   ln --symbolic ${env} /nix/var/gcroots/current-system
-    # '';
+    fakeRootCommands = ''
+      ln --symbolic --force ${miniEnv}/bin /run/current-system
+    '';
+    enableFakechroot = true;
   };
 }

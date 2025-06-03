@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: knixtest
+spec:
+  accessModes:
+    - ReadWriteMany
+  capacity:
+    storage: 1M
+  csi:
+    driver: knix.csi.store
+    volumeAttributes:
+    volumeHandle: knixtest
+  persistentVolumeReclaimPolicy: Delete
+  storageClassName: knix-csi
+  volumeMode: Filesystem
+

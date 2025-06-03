@@ -6,7 +6,8 @@
   csi-proto-python,
   kubectl,
   util-linux,
-  rsync
+  rsync,
+  aiopath,
 }:
 let
   pname = "knix-csi";
@@ -23,5 +24,6 @@ buildPythonApplication {
     kubectl
     util-linux
     rsync
+    aiopath
   ];
 }

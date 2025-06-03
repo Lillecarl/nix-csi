@@ -34,6 +34,17 @@
           doInstallCheck = false;
         });
         certbuilder = pkgs.python3Packages.callPackage ./nix/pkgs/certbuilder.nix { };
+        aiofile = pkgs.python3Packages.aiofile.overrideAttrs (pattrs: rec {
+          version = "3.8.8";
+          src = pkgs.fetchPypi {
+            pname = "aiofile";
+            version = version;
+            hash = "sha256-QfPcQL1zBFnVhhBHboLl77L4Subp+giKlUU4XYOLikM=";
+          };
+          doCheck = false;
+          doInstallCheck = false;
+        });
+        aiopath = pkgs.python3Packages.callPackage ./nix/pkgs/aiopath.nix { inherit aiofile; };
         csi-proto-python = pkgs.python3Packages.callPackage ./nix/pkgs/csi-proto-python/default.nix { };
         containerimage = import ./nix/pkgs/containerimage.nix {
           inherit pkgs;
@@ -46,7 +57,7 @@
           }
         );
         knix-csi = pkgs.python3Packages.callPackage ./nix/pkgs/knix-csi.nix {
-          inherit kopf csi-proto-python;
+          inherit kopf csi-proto-python aiopath;
         };
 
         ourPython = pkgs.python3.withPackages (
@@ -55,6 +66,7 @@
             grpclib
             kopf
             csi-proto-python
+            aiopath
           ]
         );
       in

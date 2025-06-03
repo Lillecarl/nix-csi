@@ -169,23 +169,15 @@ class ControllerServicer(csi_grpc.ControllerBase):
         volume_id = request.name
         capacity_bytes = request.capacity_range.required_bytes if request.capacity_range else 0
 
-        pvcName = None
-        pvcNamespace = None
+        expr = None
         for k, v in request.parameters.items():
             if k == "csi.storage.k8s.io/pvc/name":
                 pvcName = v
             if k == "csi.storage.k8s.io/pvc/namespace":
                 pvcNamespace = v
+            if k == "expr":
+                expr = v
 
-        if pvcName is None or pvcNamespace is None:
-            error = f"Could not extract PVC name and namespace. Make sure --extra-create-metadata is configured on external-provisioner"
-            logger.error(msg=error)
-            raise GRPCError(
-                Status.INTERNAL,
-                error,
-            )
-
-        expr = await getExpressionFromPvc(pvcName, pvcNamespace, request)
         if expr is None:
             raise Exception("Couldn't find expression")
         
@@ -206,8 +198,6 @@ class ControllerServicer(csi_grpc.ControllerBase):
                 volume_id=volume_id,
                 capacity_bytes=capacity_bytes,
                 volume_context={
-                    "csi.storage.k8s.io/pvc/name": pvcName,
-                    "csi.storage.k8s.io/pvc/namespace": pvcNamespace,
                 },
                 accessible_topology=[],
             )
@@ -262,7 +252,7 @@ class ControllerServicer(csi_grpc.ControllerBase):
         request: csi_pb2.ControllerGetCapabilitiesRequest | None = await stream.recv_message()
         if request is None:
             raise ValueError("ControllerGetCapabilitiesRequest is None")
-        log_request("ControllerGetCapabilities", request)
+        # log_request("ControllerGetCapabilities", request)
         reply = csi_pb2.ControllerGetCapabilitiesResponse(
             capabilities=[
                 csi_pb2.ControllerServiceCapability(
@@ -314,23 +304,11 @@ class NodeServicer(csi_grpc.NodeBase):
         log_request("NodePublishVolume", request)
 
         logger.debug(msg=f"Looking for Nix expression in volume_context, volume_id: {request.volume_id}")
-        pvcName = None
-        pvcNamespace = None
+        expr = None
         for k,v in request.volume_context.items():
-            if k == "csi.storage.k8s.io/pvc/name":
-                pvcName = v
-            if k == "csi.storage.k8s.io/pvc/namespace":
-                pvcNamespace = v
+            if k == "expr":
+                expr = v
 
-        if pvcName is None or pvcNamespace is None:
-            error = f"Could not extract PVC name and namespace. Make sure --extra-create-metadata is configured on external-provisioner"
-            logger.error(msg=error)
-            raise GRPCError(
-                Status.INTERNAL,
-                error,
-            )
-
-        expr = await getExpressionFromPvc(pvcName, pvcNamespace, request)
         if expr is None:
             raise Exception("Couldn't find expression")
         
@@ -429,7 +407,25 @@ class NodeServicer(csi_grpc.NodeBase):
         if request is None:
             raise ValueError("NodeGetCapabilitiesRequest is None")
         # log_request("NodeGetCapabilities", request)
-        reply = csi_pb2.NodeGetCapabilitiesResponse()
+        reply = csi_pb2.NodeGetCapabilitiesResponse(
+            capabilities=[
+                csi_pb2.NodeServiceCapability(
+                    rpc=csi_pb2.NodeServiceCapability.RPC(
+                        type=csi_pb2.NodeServiceCapability.RPC.STAGE_UNSTAGE_VOLUME
+                    )
+                ),
+                csi_pb2.NodeServiceCapability(
+                    rpc=csi_pb2.NodeServiceCapability.RPC(
+                        type=csi_pb2.NodeServiceCapability.RPC.VOLUME_CONDITION
+                    )
+                ),
+                csi_pb2.NodeServiceCapability(
+                    rpc=csi_pb2.NodeServiceCapability.RPC(
+                        type=csi_pb2.NodeServiceCapability.RPC.GET_VOLUME_STATS
+                    )
+                )
+            ]
+        )
         await stream.send_message(reply)
 
     async def NodeGetInfo(self, stream):
@@ -443,7 +439,14 @@ class NodeServicer(csi_grpc.NodeBase):
         await stream.send_message(reply)
 
     async def NodeGetVolumeStats(self, stream):
-        raise Exception("NodeGetVolumeStats not implemented")
+        request: csi_pb2.NodeGetVolumeStatsRequest | None = await stream.recv_message()
+        if request is None:
+            raise ValueError("NodeGetVolumeStats is None")
+        log_request("NodeGetInfo", request)
+        reply = csi_pb2.NodeGetVolumeStatsResponse(
+            volume_condition=csi_pb2.VolumeCondition(abnormal=False, message="HEJHEJ")
+        )
+        await stream.send_message(reply)
     async def NodeExpandVolume(self, stream):
         raise Exception("NodeExpandVolume not implemented")
     async def NodeStageVolume(self, stream):
@@ -484,15 +487,14 @@ async def serve(args: argparse.Namespace):
     logger.info(f"CSI driver (grpclib) listening on unix://{sock_path}")
     await server.wait_closed()
 
-@kopf.on.update('expressions.knix.cool') # type: ignore
-def my_handler(name, namespace, spec, old, new, diff, **_):
-    # Build expression as soon as it's available
-    logger.info(msg=f"Expression updated")
-    logger.info(msg=name)
-    logger.info(msg=namespace)
-    logger.info(msg=spec)
-    logger.info(msg=old)
-    logger.info(msg=new)
-    logger.info(msg=diff)
+@kopf.on.create('expressions.knix.cool') # type: ignore
+@kopf.on.update('expressions.knix.cool', field="data.expr") # type: ignore
+async def handleExpression(name, namespace, spec, old, new, diff, **_):
+    res = await helpers.kubectlNS(namespace, [ "get", helpers.CRDNAME, name ])
+    obj = json.loads(res.stdout)
+    res = await helpers.build(obj["data"]["expr"])
     pass
 
+# @kopf.on.create('pods') # type: ignore
+# async def onPodUpdate(name, namespace, spec, old, new, diff, **_):
+#     pass

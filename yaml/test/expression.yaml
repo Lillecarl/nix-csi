@@ -1,0 +1,6 @@
+apiVersion: knix.cool/v1
+kind: Expression
+metadata:
+  name: hello
+data:
+  expr: "(import /knix/default.nix).legacyPackages.x86_64-linux.hello"

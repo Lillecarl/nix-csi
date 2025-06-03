@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: knix-ng
+  labels:
+    app: knix-ng
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: knix-ng
+  template:
+    metadata:
+      labels:
+        app: knix-ng
+    spec:
+      containers:
+      - name: knix-ng
+        # args:
+        # - -c
+        # - /etc/supervisord.conf
+        # command:
+        # - sleep
+        # - infinity
+        image: rg.nl-ams.scw.cloud/lillecarl/knix:latest
+        ports:
+        - containerPort: 8080
+        volumeMounts:
+        - name: knix-code
+          mountPath: /knix
+      volumes:
+      - name: knix-code
+        hostPath:
+          path: /home/lillecarl/Code/knix
+          type: Directory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: knix-ng
+spec:
+  selector:
+    app: knix-ng
+  ports:
+  - protocol: TCP
+    port: 8080
+    targetPort: 8080
+  type: ClusterIP
