@@ -131,7 +131,6 @@ class IdentityServicer(csi_grpc.IdentityBase):
         request: csi_pb2.GetPluginInfoRequest | None = await stream.recv_message()
         if request is None:
             raise ValueError("GetPluginInfoRequest is None")
-        log_request("GetPluginInfo", request)
         reply = csi_pb2.GetPluginInfoResponse(
             name=CSI_PLUGIN_NAME,
             vendor_version=CSI_VENDOR_VERSION
@@ -142,7 +141,6 @@ class IdentityServicer(csi_grpc.IdentityBase):
         request: csi_pb2.GetPluginCapabilitiesRequest | None = await stream.recv_message()
         if request is None:
             raise ValueError("GetPluginCapabilitiesRequest is None")
-        log_request("GetPluginCapabilities", request)
         reply = csi_pb2.GetPluginCapabilitiesResponse(
             capabilities=[
                 csi_pb2.PluginCapability(
@@ -158,7 +156,6 @@ class IdentityServicer(csi_grpc.IdentityBase):
         request: csi_pb2.ProbeRequest | None = await stream.recv_message()
         if request is None:
             raise ValueError("ProbeRequest is None")
-        log_request("Probe", request)
         reply = csi_pb2.ProbeResponse(ready=BoolValue(value=True))
         await stream.send_message(reply)
 
@@ -461,7 +458,6 @@ async def serve(args: argparse.Namespace):
     except FileNotFoundError:
         pass
 
-    tasks = list()
     server = Server([
         IdentityServicer(),
         ControllerServicer(),
@@ -478,24 +474,15 @@ async def serve(args: argparse.Namespace):
             IdentityServicer(),
             ControllerServicer(),
         ])
-        thread = threading.Thread(target=kopf_thread)
-        thread.start()
-        tasks.append(asyncio.to_thread(thread.join))
-
 
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.bind(sock_path)
     sock.listen(128)
     sock.setblocking(False)
 
-    tasks.append(server.start(sock=sock))
-
-    await asyncio.gather(*tasks)
+    await server.start(sock=sock)
     logger.info(f"CSI driver (grpclib) listening on unix://{sock_path}")
     await server.wait_closed()
-
-def kopf_thread():
-    asyncio.run(kopf.operator())
 
 @kopf.on.update('expressions.knix.cool') # type: ignore
 def my_handler(name, namespace, spec, old, new, diff, **_):

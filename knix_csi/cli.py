@@ -2,6 +2,8 @@ import os
 import asyncio
 import logging
 import argparse
+import threading
+import kopf
 from . import knix
 
 def parse_args():
@@ -25,6 +27,9 @@ def parse_args():
     )
     return parser.parse_args()
 
+def kopf_thread():
+    asyncio.run(kopf.operator())
+
 async def main_async():
     args = parse_args()
     logging.basicConfig(
@@ -39,7 +44,16 @@ async def main_async():
     hpacklogger = logging.getLogger("hpack.hpack")
     hpacklogger.setLevel(logging.INFO)
 
-    await knix.serve(args)
+    tasks = list()
+
+    if getattr(args, "controller"):
+        thread = threading.Thread(target=kopf_thread)
+        thread.start()
+        tasks.append(asyncio.to_thread(thread.join))
+
+    tasks.append(knix.serve(args))
+
+    await asyncio.gather(*tasks)
 
 def main():
     asyncio.run(main_async())

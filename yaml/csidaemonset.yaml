@@ -20,6 +20,73 @@ reclaimPolicy: Delete
 volumeBindingMode: WaitForFirstConsumer
 allowVolumeExpansion: false
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: supervisorconfig
+  namespace: default
+data:
+  supervisord.conf: |
+    [supervisorctl]
+    serverurl=unix:///run/supervisor.sock
+  controller.conf: |
+    [unix_http_server]
+    chmod=0700
+    file=/run/supervisor.sock
+
+    [rpcinterface:supervisor]
+    supervisor.rpcinterface_factory=supervisor.rpcinterface:make_main_rpcinterface
+
+    [supervisord]
+    logfile=/dev/stdout
+    logfile_maxbytes=0
+    logfile_backups=0
+    childlogdir=/var/log
+    pidfile=/run/supervisord.pid
+
+    [program:knix-csi]
+    autorestart=true
+    autostart=true
+    command=nix run --file /knix/default.nix spackages.knix-csi -- --controller --loglevel=DEBUG
+    stdout_logfile=/dev/stdout
+    stdout_logfile_maxbytes=0
+    stderr_logfile=/dev/stderr
+    stderr_logfile_maxbytes=0
+
+    [program:attic-server]
+    autorestart=true
+    autostart=true
+    command=nix run --file /knix/default.nix spkgs.attic-server
+    stdout_logfile=/dev/stdout
+    stdout_logfile_maxbytes=0
+    stderr_logfile=/dev/stderr
+    stderr_logfile_maxbytes=0
+
+  node.conf: |
+    [unix_http_server]
+    chmod=0700
+    file=/run/supervisor.sock
+
+    [rpcinterface:supervisor]
+    supervisor.rpcinterface_factory=supervisor.rpcinterface:make_main_rpcinterface
+
+    [supervisord]
+    logfile=/dev/stdout
+    logfile_maxbytes=0
+    logfile_backups=0
+    childlogdir=/var/log
+    ;logfile=/var/log/supervisord.log
+    pidfile=/run/supervisord.pid
+
+    [program:knix-csi]
+    autorestart=true
+    autostart=true
+    command=nix run --file /knix/default.nix spackages.knix-csi -- --node --loglevel=DEBUG
+    stdout_logfile=/dev/stdout
+    stdout_logfile_maxbytes=0
+    stderr_logfile=/dev/stderr
+    stderr_logfile_maxbytes=0
+---
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -40,12 +107,8 @@ spec:
       # --- init container: copy /nix to /nix2 which will be mounted in /nix in real container ---
       - name: init
         command:
-        - sh
-        - -c
-        - "cp --verbose --archive --recursive --update=none /nix/. /nix2/"
-        # - "nix run --file /knix spackages.knix-csi-node"
-        # image: rg.nl-ams.scw.cloud/lillecarl/knix:latest
-        image: nixpkgs/nix-flakes
+        - "initCopy"
+        image: rg.nl-ams.scw.cloud/lillecarl/knix:latest
         volumeMounts:
         - mountPath: /nix2
           name: knix-store
@@ -53,14 +116,11 @@ spec:
       # --- CSI driver: CSI grpc implementation ---
       containers:
       - name: knix-csi-node
-        # image: rg.nl-ams.scw.cloud/lillecarl/knix:latest
-        image: nixpkgs/nix-flakes
+        image: rg.nl-ams.scw.cloud/lillecarl/knix:latest
         command:
-        - sleep
-        - infinity
-        # - sh
-        # - -c
-        # - "nix run --file /knix spackages.knix-csi-node"
+        - "supervisord"
+        - "--configuration"
+        - "/etc/supervisor/node.conf"
         securityContext:
           privileged: true
         env:
@@ -85,9 +145,11 @@ spec:
         - name: registration-dir
           mountPath: /registration
 
+        - name: supervisorconfig
+          mountPath: /etc/supervisor
+
         - name: knixdev
           mountPath: /knix
-
 
       # --- CSI Sidecar: node-driver-registrar ---
       - name: knix-csi-registrar
@@ -140,7 +202,10 @@ spec:
       - name: registration-dir
         hostPath:
           path: /var/lib/kubelet/plugins_registry
-          type: Directory
+
+      - name: supervisorconfig
+        configMap:
+          name: supervisorconfig
 
       - name: knixdev
         hostPath:
@@ -148,13 +213,14 @@ spec:
           type: Directory
 ---
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
   name: knix-csi-controller
   namespace: default
 spec:
-  serviceName: knix-csi-controller
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: knix-csi-controller
@@ -168,10 +234,8 @@ spec:
       # --- init container: copy /nix to /nix2 which will be mounted in /nix in real container ---
       - name: init
         command:
-        - sh
-        - -c
-        - "cp --verbose --archive --recursive --update=none /nix/. /nix2/"
-        image: nixpkgs/nix-flakes
+        - "initCopy"
+        image: rg.nl-ams.scw.cloud/lillecarl/knix:latest
         volumeMounts:
         - mountPath: /nix2
           name: nix-store
@@ -179,13 +243,11 @@ spec:
       containers:
         # --- CSI Controller container ---
         - name: knix-csi-controller
-          image: nixpkgs/nix-flakes
+          image: rg.nl-ams.scw.cloud/lillecarl/knix:latest
           command:
-            - sleep
-            - infinity
-            # - sh
-            # - -c
-            # - "nix run --file /knix spackages.knix-csi-node"
+          - "supervisord"
+          - "--configuration"
+          - "/etc/supervisor/controller.conf"
           env:
             - name: CSI_ENDPOINT
               value: unix:///csi/csi.sock
@@ -196,10 +258,17 @@ spec:
           securityContext:
             privileged: true
           volumeMounts:
-            - name: knixdev
-              mountPath: /knix
+            - mountPath: /nix
+              name: nix-store
+
+            - name: supervisorconfig
+              mountPath: /etc/supervisor
+
             - name: socket-dir
               mountPath: /csi
+
+            - name: knixdev
+              mountPath: /knix
 
         # --- CSI Sidecar: external-provisioner ---
         - name: csi-provisioner
@@ -207,7 +276,7 @@ spec:
           args:
             - --csi-address=/csi/csi.sock
             - --v=5
-            - --feature-gates=Topology=true
+            - --extra-create-metadata
           env:
             - name: ADDRESS
               value: /csi/csi.sock
@@ -228,10 +297,16 @@ spec:
       volumes:
         - name: socket-dir
           emptyDir: {}
+
         - name: nix-store
           hostPath:
             path: /var/lib/knix/controller
             type: DirectoryOrCreate
+
+        - name: supervisorconfig
+          configMap:
+            name: supervisorconfig
+
         - name: knixdev
           hostPath:
             path: /home/lillecarl/Code/knix
