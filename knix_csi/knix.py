@@ -31,21 +31,22 @@ if KUBE_NODE_NAME is None:
     raise Exception("Please make sure KUBE_NODE_NAME is set")
 KUBE_NODE_NAME = str(KUBE_NODE_NAME)
 
+
 def log_request(method_name: str, request: Any):
     logger.info("Received %s:\n%s", method_name, request)
+
 
 async def realizeExpr(expr: str) -> Optional[str]:
     buildResult = await helpers.build(expr)
 
     if buildResult.retcode != 0:
         return
-    
+
     packageName = str(buildResult.stdout).removeprefix("/nix/store/").removesuffix("/")
     packagePath = buildResult.stdout
-    packageRefPath = f"/nix/var/knix/{packageName}" 
-    packageVarPath =  f"{packageRefPath}/nix/var"
-    packageResultPath =  f"{packageRefPath}/nix/var/result"
-
+    packageRefPath = f"/nix/var/knix/{packageName}"
+    packageVarPath = f"{packageRefPath}/nix/var"
+    packageResultPath = f"{packageRefPath}/nix/var/result"
 
     if Path(packageRefPath).is_dir():
         logger.info(f"Package {packageName} is already realized")
@@ -67,63 +68,67 @@ async def realizeExpr(expr: str) -> Optional[str]:
             return
     # Copy package to result folder (/nix/var/nix/result in container)
     await helpers.cp(f"{packagePath}/.", f"{packageResultPath}/")
-        
+
     return packageName
 
 
 async def getExpressionFromPvc(name: str, namespace: str, request: Any):
-        pvcResult = await helpers.run_subprocess([
+    pvcResult = await helpers.run_subprocess(
+        [
             "kubectl",
             f"--namespace={namespace}",
             "--output=json",
             "get",
             "persistentvolumeclaims",
-            name
-        ])
-        if pvcResult.retcode != 0:
-            return
+            name,
+        ]
+    )
+    if pvcResult.retcode != 0:
+        return
 
-        pvcSpec = json.loads(pvcResult.stdout)
+    pvcSpec = json.loads(pvcResult.stdout)
 
-        if pvcSpec is None:
-            error = f"Failed to find PVC with volumeName {request.name}"
-            logger.error(msg=error)
-            raise GRPCError(
-                Status.INTERNAL,
-                error,
-            )
+    if pvcSpec is None:
+        error = f"Failed to find PVC with volumeName {request.name}"
+        logger.error(msg=error)
+        raise GRPCError(
+            Status.INTERNAL,
+            error,
+        )
 
-        exprName = None
-        try:
-            exprName = pvcSpec["metadata"]["annotations"]["knix-expr"]
-        except Exception:
-            error = f"Failed to get knix-expr annotation from PVC {pvcSpec["metadata"]["name"]}{request.name}"
-            logger.error(msg=error)
-            raise GRPCError(
-                Status.INTERNAL,
-                error,
-            )
+    exprName = None
+    try:
+        exprName = pvcSpec["metadata"]["annotations"]["knix-expr"]
+    except Exception:
+        error = f"Failed to get knix-expr annotation from PVC {pvcSpec['metadata']['name']}{request.name}"
+        logger.error(msg=error)
+        raise GRPCError(
+            Status.INTERNAL,
+            error,
+        )
 
-        exprResult = await helpers.run_subprocess([
+    exprResult = await helpers.run_subprocess(
+        [
             "kubectl",
             f"--namespace={namespace}",
             "--output=json",
             "get",
             "expressions.knix.cool",
             exprName,
-        ])
+        ]
+    )
 
-        if exprResult.retcode != 0:
-            error = f"Failed to get knix expression {exprName}"
-            logger.error(msg=error)
-            raise GRPCError(
-                Status.INTERNAL,
-                error,
-            )
+    if exprResult.retcode != 0:
+        error = f"Failed to get knix expression {exprName}"
+        logger.error(msg=error)
+        raise GRPCError(
+            Status.INTERNAL,
+            error,
+        )
 
-        expr = json.loads(exprResult.stdout)["data"]["expr"]
-        logger.info(msg=f"Found expression {exprName} with expression {expr}")
-        return expr
+    expr = json.loads(exprResult.stdout)["data"]["expr"]
+    logger.info(msg=f"Found expression {exprName} with expression {expr}")
+    return expr
 
 
 class IdentityServicer(csi_grpc.IdentityBase):
@@ -132,13 +137,14 @@ class IdentityServicer(csi_grpc.IdentityBase):
         if request is None:
             raise ValueError("GetPluginInfoRequest is None")
         reply = csi_pb2.GetPluginInfoResponse(
-            name=CSI_PLUGIN_NAME,
-            vendor_version=CSI_VENDOR_VERSION
+            name=CSI_PLUGIN_NAME, vendor_version=CSI_VENDOR_VERSION
         )
         await stream.send_message(reply)
 
     async def GetPluginCapabilities(self, stream):
-        request: csi_pb2.GetPluginCapabilitiesRequest | None = await stream.recv_message()
+        request: (
+            csi_pb2.GetPluginCapabilitiesRequest | None
+        ) = await stream.recv_message()
         if request is None:
             raise ValueError("GetPluginCapabilitiesRequest is None")
         reply = csi_pb2.GetPluginCapabilitiesResponse(
@@ -159,6 +165,7 @@ class IdentityServicer(csi_grpc.IdentityBase):
         reply = csi_pb2.ProbeResponse(ready=BoolValue(value=True))
         await stream.send_message(reply)
 
+
 class ControllerServicer(csi_grpc.ControllerBase):
     async def CreateVolume(self, stream):
         request: csi_pb2.CreateVolumeRequest | None = await stream.recv_message()
@@ -167,7 +174,9 @@ class ControllerServicer(csi_grpc.ControllerBase):
         log_request("CreateVolume", request)
 
         volume_id = request.name
-        capacity_bytes = request.capacity_range.required_bytes if request.capacity_range else 0
+        capacity_bytes = (
+            request.capacity_range.required_bytes if request.capacity_range else 0
+        )
 
         expr = None
         for k, v in request.parameters.items():
@@ -180,25 +189,28 @@ class ControllerServicer(csi_grpc.ControllerBase):
 
         if expr is None:
             raise Exception("Couldn't find expression")
-        
+
         buildResult = await helpers.build(expr)
-        packageName = str(buildResult.stdout).removeprefix("/nix/store/").removesuffix("/")
+        packageName = (
+            str(buildResult.stdout).removeprefix("/nix/store/").removesuffix("/")
+        )
 
         # Install packages into gcroots on controller
-        await helpers.run_subprocess([
-            "nix-env",
-            "--profile",
-            f"/nix/var/nix/profiles/{packageName}",
-            "--set",
-            buildResult.stdout
-        ])
+        await helpers.run_subprocess(
+            [
+                "nix-env",
+                "--profile",
+                f"/nix/var/nix/profiles/{packageName}",
+                "--set",
+                buildResult.stdout,
+            ]
+        )
 
         reply = csi_pb2.CreateVolumeResponse(
             volume=csi_pb2.Volume(
                 volume_id=volume_id,
                 capacity_bytes=capacity_bytes,
-                volume_context={
-                },
+                volume_context={},
                 accessible_topology=[],
             )
         )
@@ -222,12 +234,15 @@ class ControllerServicer(csi_grpc.ControllerBase):
         raise Exception("ControllerUnpublishVolume not implemented")
 
     async def ValidateVolumeCapabilities(self, stream):
-        request: csi_pb2.ValidateVolumeCapabilitiesRequest | None = await stream.recv_message()
+        request: (
+            csi_pb2.ValidateVolumeCapabilitiesRequest | None
+        ) = await stream.recv_message()
         if request is None:
             raise ValueError("ValidateVolumeCapabilitiesRequest is None")
         log_request("ValidateVolumeCapabilities", request)
         supported = any(
-            cap.access_mode.mode == csi_pb2.VolumeCapability.AccessMode.SINGLE_NODE_WRITER
+            cap.access_mode.mode
+            == csi_pb2.VolumeCapability.AccessMode.SINGLE_NODE_WRITER
             for cap in request.volume_capabilities
         )
         if supported:
@@ -249,7 +264,9 @@ class ControllerServicer(csi_grpc.ControllerBase):
         raise Exception("GetCapacity not implemented")
 
     async def ControllerGetCapabilities(self, stream):
-        request: csi_pb2.ControllerGetCapabilitiesRequest | None = await stream.recv_message()
+        request: (
+            csi_pb2.ControllerGetCapabilitiesRequest | None
+        ) = await stream.recv_message()
         if request is None:
             raise ValueError("ControllerGetCapabilitiesRequest is None")
         # log_request("ControllerGetCapabilities", request)
@@ -289,12 +306,15 @@ class ControllerServicer(csi_grpc.ControllerBase):
         await stream.send_message(reply)
 
     async def ControllerModifyVolume(self, stream):
-        request: csi_pb2.ControllerModifyVolumeRequest | None = await stream.recv_message()
+        request: (
+            csi_pb2.ControllerModifyVolumeRequest | None
+        ) = await stream.recv_message()
         if request is None:
             raise ValueError("ControllerModifyVolumeRequest is None")
         log_request("ControllerModifyVolume", request)
         reply = csi_pb2.ControllerModifyVolumeResponse()
         await stream.send_message(reply)
+
 
 class NodeServicer(csi_grpc.NodeBase):
     async def NodePublishVolume(self, stream):
@@ -303,44 +323,53 @@ class NodeServicer(csi_grpc.NodeBase):
             raise ValueError("NodePublishVolumeRequest is None")
         log_request("NodePublishVolume", request)
 
-        logger.debug(msg=f"Looking for Nix expression in volume_context, volume_id: {request.volume_id}")
+        logger.debug(
+            msg=f"Looking for Nix expression in volume_context, volume_id: {request.volume_id}"
+        )
         expr = None
-        for k,v in request.volume_context.items():
+        for k, v in request.volume_context.items():
             if k == "expr":
                 expr = v
 
         if expr is None:
             raise Exception("Couldn't find expression")
-        
-        logger.debug(msg=f"Realizing Nix expression: {expr}, volume_id: {request.volume_id}")
+
+        logger.debug(
+            msg=f"Realizing Nix expression: {expr}, volume_id: {request.volume_id}"
+        )
         realizeRes = str(await realizeExpr(expr))
 
-        gcRootsPath =  Path("/nix/var/knix/gcroots.json")
+        gcRootsPath = Path("/nix/var/knix/gcroots.json")
         if not gcRootsPath.exists():
             gcRootsPath.write_text(json.dumps([]))
 
         gcRootsList: list = json.loads(gcRootsPath.read_text())
-        gcRootsList.append({
-            "packageName": realizeRes,
-            "targetPath": request.target_path
-        })
+        gcRootsList.append(
+            {"packageName": realizeRes, "targetPath": request.target_path}
+        )
         gcRootsPath.write_text(json.dumps(gcRootsList))
 
         logger.debug(msg=f"Creating {request.target_path} if it doesn't exist")
-        await helpers.run_subprocess([
-            "mkdir",
-            "--parents",
-            request.target_path,
-        ])
+        await helpers.run_subprocess(
+            [
+                "mkdir",
+                "--parents",
+                request.target_path,
+            ]
+        )
 
-        logger.debug(msg=f"Mounting /nix/var/knix/{realizeRes} on {request.target_path}")
-        await helpers.run_subprocess([
-            "mount",
-            "--bind",
-            "--verbose",
-            f"/nix/var/knix/{realizeRes}/nix",
-            request.target_path,
-        ])
+        logger.debug(
+            msg=f"Mounting /nix/var/knix/{realizeRes} on {request.target_path}"
+        )
+        await helpers.run_subprocess(
+            [
+                "mount",
+                "--bind",
+                "--verbose",
+                f"/nix/var/knix/{realizeRes}/nix",
+                request.target_path,
+            ]
+        )
 
         reply = csi_pb2.NodePublishVolumeResponse()
         await stream.send_message(reply)
@@ -352,43 +381,54 @@ class NodeServicer(csi_grpc.NodeBase):
         log_request("NodeUnpublishVolume", request)
 
         logger.debug(msg=f"Unmounting {request.target_path}")
-        await helpers.run_subprocess([
-            "umount",
-            "--verbose",
-            request.target_path,
-        ])
+        await helpers.run_subprocess(
+            [
+                "umount",
+                "--verbose",
+                request.target_path,
+            ]
+        )
 
         # Initialize gcroots.json database
-        gcRootsPath =  Path("/nix/var/knix/gcroots.json")
+        gcRootsPath = Path("/nix/var/knix/gcroots.json")
         if not gcRootsPath.exists():
             gcRootsPath.write_text(json.dumps([]))
         gcRootsList: list = json.loads(gcRootsPath.read_text())
         # Remove gcRoot for the volume we're dismounting now
-        gcRootsList = list(filter(lambda x: x["targetPath"] != request.target_path, gcRootsList))
+        gcRootsList = list(
+            filter(lambda x: x["targetPath"] != request.target_path, gcRootsList)
+        )
         # Remove gcRoot for targetPaths that doesn't exist anymore
-        gcRootsList = list(filter(lambda x: Path(x["targetPath"]).exists(), gcRootsList))
+        gcRootsList = list(
+            filter(lambda x: Path(x["targetPath"]).exists(), gcRootsList)
+        )
         # Write gcRoots database back to disk
         gcRootsPath.write_text(json.dumps(gcRootsList))
         # Get all valid gcRoot names
-        validRootNames = [d['packageName'] for d in gcRootsList]
+        validRootNames = [d["packageName"] for d in gcRootsList]
 
         # Loop the directories we wanna clean and remove anything that doesn't belog
-        for cleanPath in [ "/nix/var/nix/gcroots", "/nix/var/knix" ]:
+        for cleanPath in ["/nix/var/nix/gcroots", "/nix/var/knix"]:
             for gcRoot in Path(cleanPath).iterdir():
-                name = str(gcRoot).removeprefix("/nix/var/nix/gcroots/").removeprefix("/nix/var/knix/")
+                name = (
+                    str(gcRoot)
+                    .removeprefix("/nix/var/nix/gcroots/")
+                    .removeprefix("/nix/var/knix/")
+                )
                 # Make sure it looks like a package before removing it
-                if not bool(re.match(r'^[a-z0-9]{32}-[^-]+-', name)):
+                if not bool(re.match(r"^[a-z0-9]{32}-[^-]+-", name)):
                     continue
                 # Check that we're not one of the valid path and remove otherwise
                 if name not in validRootNames:
                     logger.info(msg=f"Removing {gcRoot}")
-                    await helpers.run_subprocess([
-                        "rm",
-                        "--recursive",
-                        "--force",
-                        str(gcRoot),
-                    ])
-
+                    await helpers.run_subprocess(
+                        [
+                            "rm",
+                            "--recursive",
+                            "--force",
+                            str(gcRoot),
+                        ]
+                    )
 
         # Move this to a scheduler and look further into if there's an easy way
         # to estimate how much garbage-collecting will reclaim.
@@ -423,7 +463,7 @@ class NodeServicer(csi_grpc.NodeBase):
                     rpc=csi_pb2.NodeServiceCapability.RPC(
                         type=csi_pb2.NodeServiceCapability.RPC.GET_VOLUME_STATS
                     )
-                )
+                ),
             ]
         )
         await stream.send_message(reply)
@@ -447,12 +487,16 @@ class NodeServicer(csi_grpc.NodeBase):
             volume_condition=csi_pb2.VolumeCondition(abnormal=False, message="HEJHEJ")
         )
         await stream.send_message(reply)
+
     async def NodeExpandVolume(self, stream):
         raise Exception("NodeExpandVolume not implemented")
+
     async def NodeStageVolume(self, stream):
         raise Exception("NodeStageVolume not implemented")
+
     async def NodeUnstageVolume(self, stream):
         raise Exception("NodeUnstageVolume not implemented")
+
 
 async def serve(args: argparse.Namespace):
     sock_path = "/csi/csi.sock"
@@ -461,22 +505,28 @@ async def serve(args: argparse.Namespace):
     except FileNotFoundError:
         pass
 
-    server = Server([
-        IdentityServicer(),
-        ControllerServicer(),
-        NodeServicer(),
-    ])
-
-    if getattr(args, "node"):
-        server = Server([
-            IdentityServicer(),
-            NodeServicer(),
-        ])
-    if getattr(args, "controller"):
-        server = Server([
+    server = Server(
+        [
             IdentityServicer(),
             ControllerServicer(),
-        ])
+            NodeServicer(),
+        ]
+    )
+
+    if getattr(args, "node"):
+        server = Server(
+            [
+                IdentityServicer(),
+                NodeServicer(),
+            ]
+        )
+    if getattr(args, "controller"):
+        server = Server(
+            [
+                IdentityServicer(),
+                ControllerServicer(),
+            ]
+        )
 
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.bind(sock_path)
@@ -487,13 +537,15 @@ async def serve(args: argparse.Namespace):
     logger.info(f"CSI driver (grpclib) listening on unix://{sock_path}")
     await server.wait_closed()
 
-@kopf.on.create('expressions.knix.cool') # type: ignore
-@kopf.on.update('expressions.knix.cool', field="data.expr") # type: ignore
+
+@kopf.on.create("expressions.knix.cool")  # type: ignore
+@kopf.on.update("expressions.knix.cool", field="data.expr")  # type: ignore
 async def handleExpression(name, namespace, spec, old, new, diff, **_):
-    res = await helpers.kubectlNS(namespace, [ "get", helpers.CRDNAME, name ])
+    res = await helpers.kubectlNS(namespace, ["get", helpers.CRDNAME, name])
     obj = json.loads(res.stdout)
     res = await helpers.build(obj["data"]["expr"])
     pass
+
 
 # @kopf.on.create('pods') # type: ignore
 # async def onPodUpdate(name, namespace, spec, old, new, diff, **_):

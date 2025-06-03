@@ -8,6 +8,7 @@ logger = logging.getLogger("helpers")
 
 CRDNAME = "expressions.knix.cool"
 
+
 class ProcRet:
     def __init__(self, retcode: int, stdout: str, stderr: str, cmd: str):
         self.retcode = retcode
@@ -15,13 +16,12 @@ class ProcRet:
         self.stderr = stderr
         self.cmd = cmd
 
+
 # simple subprocess function with automatic error printing
 async def run_subprocess(cmd: list[str]) -> ProcRet:
     logger.debug(f"Running command: {' '.join(cmd)}")
     proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
+        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )
     stdout, stderr = await proc.communicate()
 
@@ -37,7 +37,10 @@ async def run_subprocess(cmd: list[str]) -> ProcRet:
         logger.error(msg="stderr:")
         logger.error(msg=stderr.decode())
 
-    return ProcRet(retcode, stdout.decode().rstrip(), stderr.decode().rstrip(), " ".join(cmd))
+    return ProcRet(
+        retcode, stdout.decode().rstrip(), stderr.decode().rstrip(), " ".join(cmd)
+    )
+
 
 # subprocess cp
 async def cp(src: str, dst: str, args: list[str] = []) -> ProcRet:
@@ -48,9 +51,10 @@ async def cp(src: str, dst: str, args: list[str] = []) -> ProcRet:
         "--archive",
     ]
 
-    result = await run_subprocess(commonArgs + args + [ src, dst])
+    result = await run_subprocess(commonArgs + args + [src, dst])
 
     return result
+
 
 async def kubectlNS(namespace: str, args: list[str]):
     base = [
@@ -61,61 +65,76 @@ async def kubectlNS(namespace: str, args: list[str]):
     final = base + args
     return await run_subprocess(final)
 
+
 # our cp command with --parents
 async def cpp(src: str, dst: str) -> ProcRet:
     return await cp(src, dst, ["--parents"])
 
+
 async def ln(pointer: str, symlink: str) -> ProcRet:
-    return await run_subprocess([
-                                    "ln",
-                                    "--symbolic",
-                                    "--force",
-                                    pointer,
-                                    symlink,  
-                                ])
+    return await run_subprocess(
+        [
+            "ln",
+            "--symbolic",
+            "--force",
+            pointer,
+            symlink,
+        ]
+    )
+
 
 async def mkdir(path: str) -> ProcRet:
-    result = await run_subprocess([
-        "mkdir",
-        "--parents",
-        path,
-    ])
+    result = await run_subprocess(
+        [
+            "mkdir",
+            "--parents",
+            path,
+        ]
+    )
 
     return result
 
 
 async def eval(expr: str) -> ProcRet:
-    result = await run_subprocess([
-        "nix",
-        "eval",
-        "--impure",
-        "--expr",
-        expr,
-    ])
+    result = await run_subprocess(
+        [
+            "nix",
+            "eval",
+            "--impure",
+            "--expr",
+            expr,
+        ]
+    )
 
     return result
+
 
 async def build(expr: str) -> ProcRet:
-    result = await run_subprocess([
-        "nix",
-        "build",
-        "--no-link",
-        "--print-out-paths",
-        "--impure",
-        "--expr",
-        expr,
-    ])
+    result = await run_subprocess(
+        [
+            "nix",
+            "build",
+            "--no-link",
+            "--print-out-paths",
+            "--impure",
+            "--expr",
+            expr,
+        ]
+    )
 
     return result
 
+
 async def pathInfo(expr: str) -> ProcRet:
-    result = await run_subprocess([
-        "nix",
-        "path-info",
-        "--recursive",
-        "--impure",
-        "--expr",
-        expr,
-    ])
+    result = await run_subprocess(
+        [
+            "nix",
+            "path-info",
+            "--recursive",
+            "--impure",
+            "--expr",
+            expr,
+        ]
+    )
 
     return result
