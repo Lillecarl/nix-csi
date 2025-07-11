@@ -11,18 +11,18 @@
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.treefmt-nix.follows = "treefmt-nix";
     };
+    nix2container = {
+      # url = "github:nlewo/nix2container";
+      url = "path:/home/lillecarl/Code/nix2container";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
   outputs =
-    {
-      nixpkgs,
-      flake-utils,
-      nixng,
-      ...
-    }:
-    flake-utils.lib.eachDefaultSystem (
+    inputs:
+    inputs.flake-utils.lib.eachDefaultSystem (
       system:
       let
-        pkgs = import nixpkgs {
+        pkgs = import inputs.nixpkgs {
           inherit system;
           overlays = [ ];
         };
@@ -49,10 +49,65 @@
         containerimage = import ./nix/pkgs/containerimage.nix {
           inherit pkgs;
         };
+        nix2containerLib = inputs.nix2container.packages.${pkgs.system}.nix2container;
+
+        nix2containerImage = nix2containerLib.buildImage {
+          name = "cknix-dev";
+          config = {
+            # Should be some supervisor
+            entrypoint = [ "${lib.getExe pkgs.bash}" ];
+          };
+          # Packages "extracted" from their storepaths
+          copyToRoot = [
+            pkgs.bash
+          ];
+          # Useful for running Nix in the container
+          initializeNixDatabase = true;
+          maxLayers = 50;
+          layers = [
+            (nix2containerLib.buildLayer {
+              copyToRoot = [
+                (pkgs.runCommand "folders" { } ''
+                  mkdir -p $out/tmp
+                  mkdir -p $out/var/log
+                  mkdir -p $out/var/lib/attic
+                  mkdir -p $out/etc
+                  mkdir -p $out/run
+                  mkdir -p $out/home/nix
+                '')
+                pkgs.dockerTools.binSh
+                pkgs.dockerTools.caCertificates
+                ((import ./nix/dockerUtils.nix pkgs).nonRootShadowSetup {
+                  users = [
+                    {
+                      name = "root";
+                      id = 0;
+                    }
+                    {
+                      name = "nix";
+                      id = 1000;
+                    }
+                    {
+                      name = "nixbld";
+                      id = 1001;
+                    }
+                  ];
+                  shell = pkgs.lib.getExe pkgs.fish;
+                })
+              ];
+              deps = [
+                pkgs.fish
+                pkgs.bash
+                pkgs.ripgrep
+                pkgs.fd
+              ];
+            })
+          ];
+        };
         knix-ng = (
           import ./nix/pkgs/nixng.nix {
-            inherit (nixng) nglib;
-            inherit nixpkgs;
+            inherit (inputs.nixng) nglib;
+            inherit (inputs) nixpkgs;
             inherit pkgs;
           }
         );
@@ -67,6 +122,7 @@
             kopf
             csi-proto-python
             aiopath
+            aiosqlite
           ]
         );
       in
@@ -75,6 +131,7 @@
           inherit
             certbuilder
             containerimage
+            nix2containerImage
             csi-proto-python
             knix-ng
             ;
@@ -87,17 +144,17 @@
           };
           knix-csi = knix-csi;
           supervisord = pkgs.python3Packages.supervisor // {
-            meta =  pkgs.python3Packages.supervisor // {
+            meta = pkgs.python3Packages.supervisor // {
               mainProgram = "supervisord";
             };
           };
           supervisorctl = pkgs.python3Packages.supervisor // {
-            meta =  pkgs.python3Packages.supervisor // {
+            meta = pkgs.python3Packages.supervisor // {
               mainProgram = "supervisorctl";
             };
           };
         };
-        legacyPackages = import nixpkgs { inherit system; };
+        legacyPackages = pkgs;
       }
     );
 }

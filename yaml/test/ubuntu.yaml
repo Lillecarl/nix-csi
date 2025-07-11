@@ -40,4 +40,4 @@ spec:
     csi:
       driver: knix.csi.store
       volumeAttributes:
-        expr: "(import /knix/default.nix).spkgs.bash.outPath"
+        expr: "(import /knix/default.nix).spkgs.mtr.outPath"

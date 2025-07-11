@@ -1,5 +1,5 @@
-# knix, Nix in Kubernetes
-knix implements a CSI driver that populates a volume with the result of a nix expression
+# cknix, cloud kubernetes native nix(?)
+cknix implements a CSI driver that populates a volume with the result of a nix expression
 
 ## Highlevel design
 We run builds in a unique CSI controller, the idea is to make the commands

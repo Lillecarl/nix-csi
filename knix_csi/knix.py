@@ -371,6 +371,21 @@ class NodeServicer(csi_grpc.NodeBase):
             )
             Path(request.target_path).mkdir(parents=True, exist_ok=True)
 
+        # Initialize gcroots.json database
+        gcRootsPath = Path("/nix/var/knix/gcroots.json")
+        if not gcRootsPath.exists():
+            gcRootsPath.parent.mkdir(parents=True)
+            gcRootsPath.write_text(json.dumps([]))
+        gcRootsList: list = json.loads(gcRootsPath.read_text())
+        gcRootsList.append(
+            {
+                "packageName": packageName,
+                "targetPath": request.target_path,
+            }
+        )
+        # Write gcRoots database back to disk
+        gcRootsPath.write_text(json.dumps(gcRootsList))
+
         logger.debug(
             msg=f"Mounting /nix/var/knix/{packageName} on {request.target_path}"
         )
@@ -419,6 +434,7 @@ class NodeServicer(csi_grpc.NodeBase):
         )
         # Write gcRoots database back to disk
         gcRootsPath.write_text(json.dumps(gcRootsList))
+
         # Get all valid gcRoot names
         validRootNames = [d["packageName"] for d in gcRootsList]
 

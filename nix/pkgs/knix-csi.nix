@@ -8,6 +8,7 @@
   util-linux,
   rsync,
   aiopath,
+  aiosqlite,
 }:
 let
   pname = "knix-csi";
@@ -25,5 +26,6 @@ buildPythonApplication {
     util-linux
     rsync
     aiopath
+    aiosqlite
   ];
 }
