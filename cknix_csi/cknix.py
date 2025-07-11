@@ -23,7 +23,7 @@ from . import helpers
 
 logger = logging.getLogger("csi.driver")
 
-CSI_PLUGIN_NAME = "knix.csi.store"
+CSI_PLUGIN_NAME = "cknix.csi.store"
 CSI_VENDOR_VERSION = "0.1.0"
 
 KUBE_NODE_NAME = os.environ.get("KUBE_NODE_NAME")
@@ -44,7 +44,7 @@ async def realizeExpr(expr: str) -> Optional[str]:
 
     packageName = str(buildResult.stdout).removeprefix("/nix/store/").removesuffix("/")
     packagePath = buildResult.stdout
-    packageRefPath = f"/nix/var/knix/{packageName}"
+    packageRefPath = f"/nix/var/cknix/{packageName}"
     packageVarPath = f"{packageRefPath}/nix/var"
     packageResultPath = f"{packageRefPath}/nix/var/result"
 
@@ -98,9 +98,9 @@ async def getExpressionFromPvc(name: str, namespace: str, request: Any):
 
     exprName = None
     try:
-        exprName = pvcSpec["metadata"]["annotations"]["knix-expr"]
+        exprName = pvcSpec["metadata"]["annotations"]["cknix-expr"]
     except Exception:
-        error = f"Failed to get knix-expr annotation from PVC {pvcSpec['metadata']['name']}{request.name}"
+        error = f"Failed to get cknix-expr annotation from PVC {pvcSpec['metadata']['name']}{request.name}"
         logger.error(msg=error)
         raise GRPCError(
             Status.INTERNAL,
@@ -113,13 +113,13 @@ async def getExpressionFromPvc(name: str, namespace: str, request: Any):
             f"--namespace={namespace}",
             "--output=json",
             "get",
-            "expressions.knix.cool",
+            "expressions.cknix.cool",
             exprName,
         ]
     )
 
     if exprResult.retcode != 0:
-        error = f"Failed to get knix expression {exprName}"
+        error = f"Failed to get cknix expression {exprName}"
         logger.error(msg=error)
         raise GRPCError(
             Status.INTERNAL,
@@ -357,7 +357,7 @@ class NodeServicer(csi_grpc.NodeBase):
 
         packageName = str(evalRes.stdout).removeprefix("/nix/store/").removesuffix("/")
 
-        while not Path(f"/nix/var/knix/{packageName}").exists():
+        while not Path(f"/nix/var/cknix/{packageName}").exists():
             for i in range(10):
                 if i == 0:
                     logger.info(
@@ -372,7 +372,7 @@ class NodeServicer(csi_grpc.NodeBase):
             Path(request.target_path).mkdir(parents=True, exist_ok=True)
 
         # Initialize gcroots.json database
-        gcRootsPath = Path("/nix/var/knix/gcroots.json")
+        gcRootsPath = Path("/nix/var/cknix/gcroots.json")
         if not gcRootsPath.exists():
             gcRootsPath.parent.mkdir(parents=True)
             gcRootsPath.write_text(json.dumps([]))
@@ -387,7 +387,7 @@ class NodeServicer(csi_grpc.NodeBase):
         gcRootsPath.write_text(json.dumps(gcRootsList))
 
         logger.debug(
-            msg=f"Mounting /nix/var/knix/{packageName} on {request.target_path}"
+            msg=f"Mounting /nix/var/cknix/{packageName} on {request.target_path}"
         )
         await helpers.mkdir(request.target_path)
         await helpers.run_subprocess(
@@ -395,7 +395,7 @@ class NodeServicer(csi_grpc.NodeBase):
                 "mount",
                 "--bind",
                 "--verbose",
-                f"/nix/var/knix/{packageName}/nix",
+                f"/nix/var/cknix/{packageName}/nix",
                 request.target_path,
             ]
         )
@@ -419,7 +419,7 @@ class NodeServicer(csi_grpc.NodeBase):
         )
 
         # Initialize gcroots.json database
-        gcRootsPath = Path("/nix/var/knix/gcroots.json")
+        gcRootsPath = Path("/nix/var/cknix/gcroots.json")
         if not gcRootsPath.exists():
             gcRootsPath.parent.mkdir(parents=True)
             gcRootsPath.write_text(json.dumps([]))
@@ -439,12 +439,12 @@ class NodeServicer(csi_grpc.NodeBase):
         validRootNames = [d["packageName"] for d in gcRootsList]
 
         # Loop the directories we wanna clean and remove anything that doesn't belog
-        for cleanPath in ["/nix/var/nix/gcroots", "/nix/var/knix"]:
+        for cleanPath in ["/nix/var/nix/gcroots", "/nix/var/cknix"]:
             for gcRoot in Path(cleanPath).iterdir():
                 name = (
                     str(gcRoot)
                     .removeprefix("/nix/var/nix/gcroots/")
-                    .removeprefix("/nix/var/knix/")
+                    .removeprefix("/nix/var/cknix/")
                 )
                 # Make sure it looks like a package before removing it
                 if not bool(re.match(r"^[a-z0-9]{32}-[^-]+-", name)):
@@ -546,8 +546,8 @@ async def serve(args: argparse.Namespace, expressionQueue: asyncio.Queue[str]):
     await server.wait_closed()
 
 
-@kopf.on.create("expressions.knix.cool")  # type: ignore
-@kopf.on.update("expressions.knix.cool", field="data.expr")  # type: ignore
+@kopf.on.create("expressions.cknix.cool")  # type: ignore
+@kopf.on.update("expressions.cknix.cool", field="data.expr")  # type: ignore
 async def handleExpression(name, namespace, spec, old, new, diff, **_):
     res = await helpers.kubectlNS(namespace, ["get", helpers.CRDNAME, name])
     obj = json.loads(res.stdout)

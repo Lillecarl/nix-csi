@@ -13,7 +13,7 @@ run the same build on the node to realize the expression as a volume.
 This CSI doesn't care about how a CSI should behave regarding backing storage.
 It'll happily mount two different backing areas into pods that think they are
 bound to the same PVC. This is so that new pods always get the latest expression
-from the expressions.knix.cool CRD.
+from the expressions.cknix.cool CRD.
 
 And beware of bugs and unfinished sandwiches.
 

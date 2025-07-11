@@ -20,7 +20,7 @@ let
     pkgs.writeScriptBin "supervisord" # fish
       ''
         #! ${pkgs.lib.getExe pkgs.fish}
-        set PKG $(nix build --no-link --print-out-paths --file /knix/default.nix spackages.supervisord.outPath)
+        set PKG $(nix build --no-link --print-out-paths --file /cknix/default.nix spackages.supervisord.outPath)
         ln --symbolic --force $PKG/. /nix/var/nix/gcroots/supervisor/
         exec $PKG/bin/supervisord --nodaemon $argv
       '';
@@ -89,7 +89,7 @@ let
   };
 in
 pkgs.dockerTools.streamLayeredImage {
-  name = "knix-csi";
+  name = "cknix-csi";
   tag = "latest";
   contents = [
     folders

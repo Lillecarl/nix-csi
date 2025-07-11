@@ -11,7 +11,7 @@ cknix is a Kubernetes CSI (Container Storage Interface) driver that populates vo
 The system consists of:
 - **CSI Controller**: Runs builds in a centralized controller for caching and coordination
 - **CSI Node Driver**: Realizes expressions as volumes on individual nodes
-- **Custom Resource Definition (CRD)**: `expressions.knix.cool` defines Nix expressions to be built
+- **Custom Resource Definition (CRD)**: `expressions.cknix.cool` defines Nix expressions to be built
 - **Python CSI Implementation**: Uses kopf for Kubernetes operator functionality and grpclib for CSI protocol
 
 ## Build System
@@ -25,7 +25,7 @@ This project uses **Nix exclusively** for dependency management and building. Th
 nix develop
 
 # Build the CSI driver package
-nix build .#knix-csi
+nix build .#cknix-csi
 
 # Build the container image
 nix build .#nix2containerImage
@@ -37,16 +37,16 @@ nix build .#repoenv
 nix build .#nix2containerImage && docker load < result
 
 # Run the CSI driver locally
-nix run .#knix-csi -- --help
+nix run .#cknix-csi -- --help
 ```
 
 ### Package Structure
 
 - `flake.nix`: Main Nix flake with all package definitions and Python dependencies
-- `nix/pkgs/knix-csi.nix`: Python package definition for the CSI driver
+- `nix/pkgs/cknix-csi.nix`: Python package definition for the CSI driver
 - `nix/pkgs/`: Custom Nix packages (certbuilder, aiopath, csi-proto-python, etc.)
-- `knix_csi/`: Python source code for the CSI driver
-  - `knix.py`: Main CSI driver implementation with gRPC services
+- `cknix_csi/`: Python source code for the CSI driver
+  - `cknix.py`: Main CSI driver implementation with gRPC services
   - `helpers.py`: Build utilities and helper functions
   - `cli.py`: Command-line interface
 
@@ -63,7 +63,7 @@ Key Python packages managed through Nix:
 
 ### Custom Resources
 
-The driver uses a CRD `expressions.knix.cool` with:
+The driver uses a CRD `expressions.cknix.cool` with:
 - `spec.data.expr`: The Nix expression to evaluate
 - `status.phase`: Current build phase (Pending, Running, Succeeded, Failed)
 - `status.result`: Store path of the built expression

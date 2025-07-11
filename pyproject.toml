@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "knix-csi"
+name = "cknix-csi"
 version = "0.1.0"
 description = "CSI driver populating mounts with /nix"
 authors = [
@@ -15,7 +15,7 @@ license = { text = "MIT" }
 dependencies = []
 
 [project.scripts]
-knix-csi = "knix_csi.cli:main"
+cknix-csi = "cknix_csi.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["knix_csi*"]
+include = ["cknix_csi*"]

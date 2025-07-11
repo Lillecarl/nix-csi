@@ -2,13 +2,13 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: knix
+  name: cknix
   namespace: default
 --- # Role
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: knix
+  name: cknix
 rules:
 - apiGroups: ["apiextensions.k8s.io"]
   resources: ["customresourcedefinitions"]
@@ -20,52 +20,52 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: knix-binding
+  name: cknix-binding
 subjects:
 - kind: ServiceAccount
-  name: knix
+  name: cknix
   namespace: default
 roleRef:
   kind: ClusterRole
-  name: knix
+  name: cknix
   apiGroup: rbac.authorization.k8s.io
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: knix-deployment
+  name: cknix-deployment
   namespace: default
 spec:
   selector:
     matchLabels:
-      app: knix-deployment
+      app: cknix-deployment
   template:
     metadata:
       labels:
-        app: knix-deployment
+        app: cknix-deployment
     spec:
-      serviceAccountName: knix
+      serviceAccountName: cknix
       containers:
       - name: sleeper
         image: nixpkgs/nix-flakes
         command: ["sleep", "infinity"]
         volumeMounts:
-        - name: knixdev
-          mountPath: /knix
+        - name: cknixdev
+          mountPath: /cknix
       volumes:
-      - name: knixdev
+      - name: cknixdev
         hostPath:
-          path: /home/lillecarl/Code/knix
+          path: /home/lillecarl/Code/cknix
           type: Directory
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: knix-deployment
+  name: cknix-deployment
   namespace: default
 spec:
   selector:
-    app: knix-deployment
+    app: cknix-deployment
   ports:
     - name: zmq-pub
       protocol: TCP

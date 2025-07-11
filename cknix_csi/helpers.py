@@ -6,7 +6,7 @@ import json
 
 logger = logging.getLogger("helpers")
 
-CRDNAME = "expressions.knix.cool"
+CRDNAME = "expressions.cknix.cool"
 
 
 class ProcRet:

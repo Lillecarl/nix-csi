@@ -5,11 +5,11 @@ import logging
 import argparse
 import threading
 import kopf
-from . import knix
+from . import cknix
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="knix CSI Driver")
+    parser = argparse.ArgumentParser(description="cknix CSI Driver")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
         "--controller", action="store_true", help="Run in controller mode"
@@ -28,7 +28,7 @@ def kopf_thread():
     asyncio.run(kopf.operator())
 
 async def expressionQueueWorker(expressionQueue: asyncio.Queue[str]):
-    logger = logging.getLogger("knix-csi")
+    logger = logging.getLogger("cknix-csi")
     expressionDeque: deque[str] = deque()
     try:
         while True:
@@ -43,7 +43,7 @@ async def expressionQueueWorker(expressionQueue: asyncio.Queue[str]):
 
             for expr in expressionDeque:
                 logger.info(f"Building Nix expression: {expr}")
-                await knix.realizeExpr(expr)
+                await cknix.realizeExpr(expr)
 
     except asyncio.CancelledError:
         pass
@@ -54,7 +54,7 @@ async def main_async():
         level=getattr(logging, args.loglevel),
         format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
     )
-    logger = logging.getLogger("knix-csi")
+    logger = logging.getLogger("cknix-csi")
     loglevel_str = logging.getLevelName(logger.getEffectiveLevel())
     logger.info(f"Current log level: {loglevel_str}")
 
@@ -73,7 +73,7 @@ async def main_async():
     if getattr(args, "node"):
         tasks.append(expressionQueueWorker(expressionQueue))
 
-    tasks.append(knix.serve(args, expressionQueue))
+    tasks.append(cknix.serve(args, expressionQueue))
 
     await asyncio.gather(*tasks)
 

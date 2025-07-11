@@ -11,7 +11,7 @@
   aiosqlite,
 }:
 let
-  pname = "knix-csi";
+  pname = "cknix-csi";
   version = "0.1.0";
 in
 buildPythonApplication {

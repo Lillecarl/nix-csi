@@ -1,16 +1,16 @@
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: knix-hostpath
+  name: cknix-hostpath
   namespace: default
 spec:
   selector:
     matchLabels:
-      app: knix-hostpath
+      app: cknix-hostpath
   template:
     metadata:
       labels:
-        app: knix-hostpath
+        app: cknix-hostpath
     spec:
       initContainers:
       - name: init
@@ -18,32 +18,32 @@ spec:
         - fish
         - -c
         - "echo asdf && sleep 5 && cp --verbose --archive --update=none /nix/* /nix2/"
-        image: rg.nl-ams.scw.cloud/lillecarl/knix:latest
+        image: rg.nl-ams.scw.cloud/lillecarl/cknix:latest
         volumeMounts:
         - mountPath: /nix2
-          name: knix
+          name: cknix
         imagePullPolicy: Always
       containers:
       - name: sleeper
-        image: rg.nl-ams.scw.cloud/lillecarl/knix:latest
+        image: rg.nl-ams.scw.cloud/lillecarl/cknix:latest
         command: ["sleep", "infinity"]
         volumeMounts:
-        - name: knix
+        - name: cknix
           mountPath: /nix
-        - name: knixdev
-          mountPath: /knix
+        - name: cknixdev
+          mountPath: /cknix
         env:
-        - name: KNIX_NODENAME
+        - name: CKNIX_NODENAME
           valueFrom:
             fieldRef:
               fieldPath: spec.nodeName
         imagePullPolicy: Always
       volumes:
-      - name: knix
+      - name: cknix
         hostPath:
-          path: /var/lib/knix/nix
+          path: /var/lib/cknix/nix
           type: DirectoryOrCreate
-      - name: knixdev
+      - name: cknixdev
         hostPath:
-          path: /home/lillecarl/Code/knix
+          path: /home/lillecarl/Code/cknix
           type: Directory

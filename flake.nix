@@ -104,20 +104,20 @@
             })
           ];
         };
-        knix-ng = (
+        cknix-ng = (
           import ./nix/pkgs/nixng.nix {
             inherit (inputs.nixng) nglib;
             inherit (inputs) nixpkgs;
             inherit pkgs;
           }
         );
-        knix-csi = pkgs.python3Packages.callPackage ./nix/pkgs/knix-csi.nix {
+        cknix-csi = pkgs.python3Packages.callPackage ./nix/pkgs/cknix-csi.nix {
           inherit kopf csi-proto-python aiopath;
         };
 
         ourPython = pkgs.python3.withPackages (
           p: with p; [
-            knix-csi
+            cknix-csi
             grpclib
             kopf
             csi-proto-python
@@ -133,7 +133,7 @@
             containerimage
             nix2containerImage
             csi-proto-python
-            knix-ng
+            cknix-ng
             ;
           repoenv = pkgs.buildEnv {
             name = "repoenv";
@@ -142,7 +142,7 @@
               pkgs.skopeo
             ];
           };
-          knix-csi = knix-csi;
+          cknix-csi = cknix-csi;
           supervisord = pkgs.python3Packages.supervisor // {
             meta = pkgs.python3Packages.supervisor // {
               mainProgram = "supervisord";
