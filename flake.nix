@@ -106,6 +106,7 @@
         cknix-csi = pkgs.python3Packages.callPackage ./nix/pkgs/cknix-csi.nix {
           inherit kopf csi-proto-python aiopath;
         };
+        shell-operator = pkgs.callPackage ./nix/pkgs/shell-operator.nix { };
 
         ourPython = pkgs.python3.withPackages (
           p: with p; [
@@ -144,6 +145,7 @@
             ];
           };
           cknix-csi = cknix-csi;
+          shell-operator = shell-operator;
           supervisord = pkgs.python3Packages.supervisor // {
             meta = pkgs.python3Packages.supervisor // {
               mainProgram = "supervisord";
