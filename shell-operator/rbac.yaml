@@ -1,0 +1,45 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: shell-operator
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: shell-operator
+rules:
+# Allow reading all resources for monitoring
+- apiGroups: [""]
+  resources: ["*"]
+  verbs: ["get", "list", "watch"]
+# Allow working with custom resources
+- apiGroups: ["apiextensions.k8s.io"]
+  resources: ["customresourcedefinitions"]
+  verbs: ["get", "list", "watch"]
+# Allow working with cknix expressions
+- apiGroups: ["cknix.cool"]
+  resources: ["expressions"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# Allow updating status of cknix expressions
+- apiGroups: ["cknix.cool"]
+  resources: ["expressions/status"]
+  verbs: ["get", "update", "patch"]
+# Allow creating events for logging
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: shell-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: shell-operator
+subjects:
+- kind: ServiceAccount
+  name: shell-operator
+  namespace: default
