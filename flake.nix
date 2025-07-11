@@ -6,14 +6,13 @@
       url = "github:numtide/treefmt-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    nixng = {
-      url = "github:nix-community/NixNG";
-      inputs.nixpkgs.follows = "nixpkgs";
-      inputs.treefmt-nix.follows = "treefmt-nix";
-    };
     nix2container = {
       # url = "github:nlewo/nix2container";
       url = "path:/home/lillecarl/Code/nix2container";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    kubenix = {
+      url = "github:hall/kubenix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
@@ -104,13 +103,6 @@
             })
           ];
         };
-        cknix-ng = (
-          import ./nix/pkgs/nixng.nix {
-            inherit (inputs.nixng) nglib;
-            inherit (inputs) nixpkgs;
-            inherit pkgs;
-          }
-        );
         cknix-csi = pkgs.python3Packages.callPackage ./nix/pkgs/cknix-csi.nix {
           inherit kopf csi-proto-python aiopath;
         };
@@ -125,6 +117,16 @@
             aiosqlite
           ]
         );
+
+        kubenixEval = (
+          inputs.kubenix.evalModules.${system} {
+            module = { kubenix, ... }: {
+              imports = [
+                ./kubenix
+              ];
+            };
+          }
+        );
       in
       {
         packages = {
@@ -133,7 +135,6 @@
             containerimage
             nix2containerImage
             csi-proto-python
-            cknix-ng
             ;
           repoenv = pkgs.buildEnv {
             name = "repoenv";
@@ -152,6 +153,16 @@
             meta = pkgs.python3Packages.supervisor // {
               mainProgram = "supervisorctl";
             };
+          };
+
+          # Kubenix-generated manifests
+          cknix-manifests = pkgs.writeTextFile {
+            name = "cknix-manifests.yaml";
+            text = kubenixEval.config.kubernetes.resultYAML;
+          };
+          cknix-manifests-json = pkgs.writeTextFile {
+            name = "cknix-manifests.json";
+            text = builtins.toJSON kubenixEval.config.kubernetes.result;
           };
         };
         legacyPackages = pkgs;
