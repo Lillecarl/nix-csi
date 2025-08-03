@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Build Nix store derivations using plumbum."""
 
+import sys
 import logging
 from plumbum import local
 
@@ -27,7 +28,7 @@ def realize_store(
 ) -> None | str:
     """Build and realize a Nix expression into a sub/fake store."""
     # Build the expression
-    build_result = nix("build", "--no-link", "--print-out-paths", "--file", file, attr)
+    build_result = nix("build", "--no-link", "--print-out-paths", "--file", file, attr, stderr=sys.stderr)
     if not build_result:
         logger.error("Build failed")
         return None
@@ -89,7 +90,7 @@ def realize_store(
                     "No configured and functional store cloning method available"
                 )
 
-    # Copy package contents to result
+    # Copy package contents to result. This is a "well-know" path
     if hardlink:
         cp("--recursive", "--link", package_path, package_result_path)
     else:
