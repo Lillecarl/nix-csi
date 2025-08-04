@@ -2,14 +2,10 @@ import asyncio
 import logging
 import os
 import socket
-import sys
 import json
 import argparse
-import threading
 import kopf
-import hashlib
 import re
-import shutil
 
 from pathlib import Path
 from typing import Any, Optional
@@ -23,9 +19,10 @@ from . import helpers
 
 logger = logging.getLogger("csi.driver")
 
-CSI_PLUGIN_NAME = "cknix.csi.store"
+CSI_PLUGIN_NAME = "cknix.csi"
 CSI_VENDOR_VERSION = "0.1.0"
 
+# todo: This shouldn't be a requirement for the controller part
 KUBE_NODE_NAME = os.environ.get("KUBE_NODE_NAME")
 if KUBE_NODE_NAME is None:
     raise Exception("Please make sure KUBE_NODE_NAME is set")
