@@ -38,6 +38,8 @@ nix build .#nix2containerImage && docker load < result
 
 # Run the CSI driver locally
 nix run .#cknix-csi -- --help
+
+# Prefer using "nix command" rather than nix-commands
 ```
 
 ### Package Structure
@@ -107,3 +109,9 @@ The CSI driver intentionally deviates from standard CSI behavior:
 - The driver requires `KUBE_NODE_NAME` environment variable
 - Builds are executed via subprocess calls to `nix build`
 - Uses async/await patterns throughout for non-blocking operations
+
+## Nix Flakes Approach
+
+- Try not using flakes directly
+- Use flake-compat to expose an attrset identical to flakes from default.nix
+- This approach avoids copying all source code to the Nix store while maintaining flake-like functionality

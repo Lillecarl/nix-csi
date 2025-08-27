@@ -1,14 +1,14 @@
 # apiVersion: v1
 # kind: PersistentVolumeClaim
 # metadata:
-#   name: knix-volume
+#   name: cknix-volume
 #   annotations:
-#     knix-expr: hello
+#     cknix-expr: hello
 # spec:
 #   accessModes:
 #     - ReadWriteMany
-#   storageClassName: knix-csi
-#   volumeName: knixtest
+#   storageClassName: cknix-csi
+#   volumeName: cknixtest
 #   resources:
 #     requests:
 #       storage: 1M
@@ -19,7 +19,7 @@ metadata:
   labels:
     run: ubuntu
   annotations:
-    knix-expr: hello
+    cknix-expr: hello
   name: ubuntu1
 spec:
   containers:
@@ -29,15 +29,15 @@ spec:
     image: ubuntu:22.04
     name: ubuntu
     volumeMounts:
-    - name: knix-volume
+    - name: cknix-volume
       mountPath: /nix
       readOnly: true
   volumes:
-  # - name: knix-volume
+  # - name: cknix-volume
   #   persistentVolumeClaim:
-  #     claimName: knix-volume
-  - name: knix-volume
+  #     claimName: cknix-volume
+  - name: cknix-volume
     csi:
-      driver: knix.csi.store
+      driver: cknix.csi.store
       volumeAttributes:
-        expr: "(import /knix/default.nix).spkgs.mtr.outPath"
+        expr: "(import /cknix/default.nix).spkgs.mtr.outPath"

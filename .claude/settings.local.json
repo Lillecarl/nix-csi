@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rg:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:flant.github.io)",
+      "Bash(mkdir:*)",
+      "Bash(find:*)",
+      "Bash(cat:*)",
+      "WebFetch(domain:nix.dev)",
+      "WebFetch(domain:nixos.org)",
+      "Bash(nix-prefetch-github:*)",
+      "Bash(ls:*)",
+      "Bash(nix build:*)",
+      "Bash(nix-build:*)",
+      "Bash(nix eval:*)",
+      "Bash(nix-instantiate:*)",
+      "Bash(nix copy:*)",
+      "Bash(nix-store:*)",
+      "Bash(nix path-info:*)",
+      "Bash(nix flake:*)",
+      "Bash(nix build:*)",
+      "Bash(nix run:*)",
+      "Bash(nix eval:*)",
+      "Bash(nix-env:*)",
+      "Bash(nix-prefetch-url:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(nix-prefetch fetchPypi:*)",
+      "Bash(echo $PATH)"
+    ],
+    "deny": []
+  }
+}

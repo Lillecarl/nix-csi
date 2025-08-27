@@ -7,8 +7,8 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     nix2container = {
-      # url = "github:nlewo/nix2container";
-      url = "path:/home/lillecarl/Code/nix2container";
+      url = "github:nlewo/nix2container";
+      # url = "path:/home/lillecarl/Code/nix2container";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     kubenix = {
@@ -45,6 +45,9 @@
         });
         aiopath = pkgs.python3Packages.callPackage ./nix/pkgs/aiopath.nix { inherit aiofile; };
         csi-proto-python = pkgs.python3Packages.callPackage ./nix/pkgs/csi-proto-python/default.nix { };
+        asyncache = pkgs.python3Packages.callPackage ./nix/pkgs/asyncache.nix { };
+        python-jsonpath = pkgs.python3Packages.callPackage ./nix/pkgs/python-jsonpath.nix { };
+        kr8s = pkgs.python3Packages.callPackage ./nix/pkgs/kr8s.nix { inherit asyncache python-jsonpath; };
         containerimage = import ./nix/pkgs/containerimage.nix {
           inherit pkgs;
         };
@@ -116,36 +119,73 @@
             csi-proto-python
             aiopath
             aiosqlite
+            plumbum
+            kr8s
           ]
         );
 
         kubenixEval = (
           inputs.kubenix.evalModules.${system} {
-            module = { kubenix, ... }: {
-              imports = [
-                ./kubenix
-              ];
-            };
+            module =
+              { kubenix, ... }:
+              {
+                imports = [
+                  ./kubenix
+                ];
+              };
           }
         );
       in
       {
-        packages = {
+        packages = rec {
           inherit
             certbuilder
             containerimage
             nix2containerImage
             csi-proto-python
+            asyncache
+            kr8s
+            cknix-csi
+            shell-operator
             ;
           repoenv = pkgs.buildEnv {
             name = "repoenv";
             paths = [
               ourPython
               pkgs.skopeo
+              pkgs.uv
             ];
           };
-          cknix-csi = cknix-csi;
-          shell-operator = shell-operator;
+          createstore = pkgs.writeScriptBin "cknix-local" ''
+            #! ${lib.getExe pkgs.bash}
+            export PATH=${repoenv}/bin:$PATH
+            ./createstore.py
+          '';
+          cknix-local = pkgs.writeScriptBin "cknix-local" ''
+            #!${pkgs.bash}/bin/bash
+
+            # cknix-local - Run shell-operator with cknix hooks
+
+            export SHELL_OPERATOR_HOOKS_DIR="$PWD/shell-operator/hooks"
+            export LOG_LEVEL="info"
+
+            # Create temporary directory for debug socket to avoid permission errors
+            DEBUG_SOCKET_DIR="$(${pkgs.coreutils}/bin/mktemp -d)"
+            DEBUG_SOCKET="$DEBUG_SOCKET_DIR/shell-operator-debug.sock"
+
+            if [ ! -d "$SHELL_OPERATOR_HOOKS_DIR" ]; then
+              echo "Error: hooks directory not found at $SHELL_OPERATOR_HOOKS_DIR"
+              echo "Please run from the cknix project root directory"
+              exit 1
+            fi
+
+            echo "Starting cknix shell-operator..."
+            echo "Hooks directory: $SHELL_OPERATOR_HOOKS_DIR"
+            echo "Log level: $LOG_LEVEL"
+            echo "Debug socket: $DEBUG_SOCKET"
+
+            exec ${shell-operator}/bin/shell-operator start --debug-unix-socket="$DEBUG_SOCKET" "$@"
+          '';
           supervisord = pkgs.python3Packages.supervisor // {
             meta = pkgs.python3Packages.supervisor // {
               mainProgram = "supervisord";
@@ -158,10 +198,7 @@
           };
 
           # Kubenix-generated manifests
-          cknix-manifests = pkgs.writeTextFile {
-            name = "cknix-manifests.yaml";
-            text = kubenixEval.config.kubernetes.resultYAML;
-          };
+          cknix-manifests = kubenixEval.config.kubernetes.resultYAML;
           cknix-manifests-json = pkgs.writeTextFile {
             name = "cknix-manifests.json";
             text = builtins.toJSON kubenixEval.config.kubernetes.result;

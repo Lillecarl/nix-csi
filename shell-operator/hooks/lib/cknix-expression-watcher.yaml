@@ -4,5 +4,4 @@ kubernetes:
     kind: Expression
     apiVersion: cknix.cool/v1
     executeHookOnEvent: ["Added", "Modified", "Deleted"]
-    namespace: {}
     jqFilter: ".spec.data.expr"

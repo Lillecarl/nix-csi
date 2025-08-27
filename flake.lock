@@ -64,14 +64,17 @@
         ]
       },
       "locked": {
-        "lastModified": 1751074911,
-        "narHash": "sha256-ND27pvMB+JvxTvVmNsU6Qjhm1+R4UX5QW+dSHPwBKVY=",
-        "path": "/home/lillecarl/Code/nix2container",
-        "type": "path"
+        "lastModified": 1752002763,
+        "narHash": "sha256-JYAkdZvpdSx9GUoHPArctYMypSONob4DYKRkOubUWtY=",
+        "owner": "nlewo",
+        "repo": "nix2container",
+        "rev": "4f2437f6a1844b843b380d483087ae6d461240ee",
+        "type": "github"
       },
       "original": {
-        "path": "/home/lillecarl/Code/nix2container",
-        "type": "path"
+        "owner": "nlewo",
+        "repo": "nix2container",
+        "type": "github"
       }
     },
     "nixpkgs": {

@@ -28,7 +28,15 @@ def realize_store(
 ) -> None | str:
     """Build and realize a Nix expression into a sub/fake store."""
     # Build the expression
-    build_result = nix("build", "--no-link", "--print-out-paths", "--file", file, attr, stderr=sys.stderr)
+    build_result = nix(
+        "build",
+        "--no-link",
+        "--print-out-paths",
+        "--file",
+        file,
+        attr,
+        stderr=sys.stderr,
+    )
     if not build_result:
         logger.error("Build failed")
         return None
@@ -38,13 +46,14 @@ def realize_store(
     # Extract the package name
     package_name = package_path.removeprefix("/nix/store/").removesuffix("/")
 
-    FAKEROOT = f"{substorePath}/{root_name}"
-    PREFIX = f"{FAKEROOT}/nix"
-    NIX_STATE_DIR = f"{PREFIX}/var/nix"
-    NIX_STORE_DIR = f"{PREFIX}/store"
-    package_result_path = f"{PREFIX}/var/result"
+    fakeroot = f"{substorePath}/{root_name}"
+    prefix = f"{fakeroot}/nix"
+    package_result_path = f"{prefix}/var/result"
+    # Capitalized to emphasise they're Nix environment variables
+    NIX_STATE_DIR = f"{prefix}/var/nix"
+    NIX_STORE_DIR = f"{prefix}/store"
 
-    if local.path(FAKEROOT).is_dir():
+    if local.path(fakeroot).is_dir():
         print(f"Package {package_name} {root_name} is already realized")
         return package_name
 
@@ -53,7 +62,6 @@ def realize_store(
     path_list = path_info.strip().splitlines()
 
     # Create container store structure
-    mkdir("--parents", FAKEROOT)
     mkdir("--parents", NIX_STATE_DIR)
     mkdir("--parents", NIX_STORE_DIR)
 
