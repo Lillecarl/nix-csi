@@ -19,8 +19,7 @@ ln = local["ln"]
 
 
 def realize_store(
-    file: str,
-    attr: str,
+    expr: str,
     root_name: str,
     hardlink: bool = True,
     reflink: bool = True,
@@ -30,11 +29,11 @@ def realize_store(
     # Build the expression
     build_result = nix(
         "build",
+        "--impure",
         "--no-link",
         "--print-out-paths",
-        "--file",
-        file,
-        attr,
+        "--expr",
+        expr,
         stderr=sys.stderr,
     )
     if not build_result:
@@ -118,13 +117,13 @@ def realize_store(
     mkdir("--parents", cknix_roots)
     ln("--symbolic", "--force", package_path, f"{cknix_roots}/{root_name}")
 
-    return package_name
-
+    return fakeroot
 
 if __name__ == "__main__":
     realize_store(
-        "/home/lillecarl/Code/nixos/repl.nix",
-        "pkgs.hello.out",
+        """
+            (import /home/lillecarl/Code/nixos/repl.nix).pkgs.hello.out
+        """,
         "4b6ef9dc-655f-4e63-b11c-3881281ed1d0",  # gcroots name
         True,
         True,

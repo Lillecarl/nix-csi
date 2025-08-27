@@ -4,8 +4,8 @@ import os
 import socket
 import json
 import argparse
-import kopf
-import re
+import sys
+from plumbum import local
 
 from pathlib import Path
 from typing import Any, Optional
@@ -19,7 +19,7 @@ from . import helpers
 
 logger = logging.getLogger("csi.driver")
 
-CSI_PLUGIN_NAME = "cknix.csi"
+CSI_PLUGIN_NAME = "cknix.csi.store"
 CSI_VENDOR_VERSION = "0.1.0"
 
 # todo: This shouldn't be a requirement for the controller part
@@ -33,40 +33,123 @@ def log_request(method_name: str, request: Any):
     logger.info("Received %s:\n%s", method_name, request)
 
 
-async def realizeExpr(expr: str) -> Optional[str]:
-    buildResult = await helpers.build(expr)
+#!/usr/bin/env python3
+"""Build Nix store derivations using plumbum."""
 
-    if buildResult.retcode != 0:
-        return
 
-    packageName = str(buildResult.stdout).removeprefix("/nix/store/").removesuffix("/")
-    packagePath = buildResult.stdout
-    packageRefPath = f"/nix/var/cknix/{packageName}"
-    packageVarPath = f"{packageRefPath}/nix/var"
-    packageResultPath = f"{packageRefPath}/nix/var/result"
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger("createstore")
+logger.setLevel(logging.DEBUG)
 
-    if Path(packageRefPath).is_dir():
-        logger.info(f"Package {packageName} is already realized")
-        return packageName
+substorePath = "/nix/var/cknix"
 
-    # Link package to gcroots
-    await helpers.ln(packagePath, f"/nix/var/nix/gcroots/{packageName}")
+nix = local["nix"]
+mkdir = local["mkdir"]
+cp = local["cp"]
+nix_store = local["nix-store"]
+ln = local["ln"]
 
-    pathInfoResult = await helpers.pathInfo(expr)
 
-    # Create "container store root"
-    await helpers.mkdir(packageRefPath)
-    # Create /nix/var in "container store root"
-    await helpers.mkdir(packageVarPath)
-    # Copy all dependencies of package into container store
-    for path in pathInfoResult.stdout.splitlines():
-        res = await helpers.cpp(path, packageRefPath)
-        if res.retcode != 0:
-            return
-    # Copy package to result folder (/nix/var/nix/result in container)
-    await helpers.cp(f"{packagePath}/.", f"{packageResultPath}/")
+def realize_store(
+    expr: str,
+    root_name: str,
+    hardlink: bool = True,
+    reflink: bool = True,
+    copy: bool = True,
+) -> None | str:
+    """Build and realize a Nix expression into a sub/fake store."""
+    # Build the expression
+    build_result = nix(
+        "build",
+        "--impure",
+        "--no-link",
+        "--print-out-paths",
+        "--expr",
+        expr,
+        stderr=sys.stderr,
+    )
+    if not build_result:
+        logger.error("Build failed")
+        return None
 
-    return packageName
+    # Get the resulting storepath
+    package_path = build_result.strip()
+    # Extract the package name
+    package_name = package_path.removeprefix("/nix/store/").removesuffix("/")
+
+    fakeroot = f"{substorePath}/{root_name}"
+    prefix = f"{fakeroot}/nix"
+    package_result_path = f"{prefix}/var/result"
+    # Capitalized to emphasise they're Nix environment variables
+    NIX_STATE_DIR = f"{prefix}/var/nix"
+    NIX_STORE_DIR = f"{prefix}/store"
+
+    if local.path(fakeroot).is_dir():
+        print(f"Package {package_name} {root_name} is already realized")
+        return package_name
+
+    # Get dependency paths
+    path_info = nix("path-info", "--recursive", package_path)
+    path_list = path_info.strip().splitlines()
+
+    # Create container store structure
+    mkdir("--parents", NIX_STATE_DIR)
+    mkdir("--parents", NIX_STORE_DIR)
+
+    # Copy dependencies to substore
+    for path in path_list:
+        if path.strip():
+            pathargs = [path, NIX_STORE_DIR]
+            # Overly verbose for error reportings sake
+            if hardlink:
+                try:
+                    cp("--recursive", "--link", *pathargs)
+                    continue
+                except Exception as ex:
+                    logger.error("Unable to hardlink")
+                    logger.error(ex)
+                    hardlink = False
+            if reflink:
+                try:
+                    cp("--recursive", "--reflink=always", *pathargs)
+                    continue
+                except Exception:
+                    logger.error("Unable to reflink")
+                    reflink = False
+            if copy:
+                try:
+                    # coreutils cp will reflink if it can
+                    cp("--recursive", *pathargs)
+                    continue
+                except Exception:
+                    logger.error("Unable to copy")
+                    copy = False
+            else:
+                raise Exception(
+                    "No configured and functional store cloning method available"
+                )
+
+    # Copy package contents to result. This is a "well-know" path
+    if hardlink:
+        cp("--recursive", "--link", package_path, package_result_path)
+    else:
+        # coreutils cp will reflink if it can
+        cp("--recursive", package_path, package_result_path)
+
+    # Create Nix database
+    # Use Plumbum combinators to pipe from --dump-db to --load-db
+    # We only export the paths we need from the path_list
+    (
+        nix_store["--dump-db", *path_list]
+        | nix_store["--load-db"].with_env(USER="nobody", NIX_STATE_DIR=NIX_STATE_DIR)
+    )()
+
+    # Link result into gcroots
+    cknix_roots = "/nix/var/nix/gcroots/cknix"
+    mkdir("--parents", cknix_roots)
+    ln("--symbolic", "--force", package_path, f"{cknix_roots}/{root_name}")
+
+    return fakeroot
 
 
 async def getExpressionFromPvc(name: str, namespace: str, request: Any):
@@ -327,12 +410,18 @@ class NodeServicer(csi_grpc.NodeBase):
             msg=f"Looking for Nix expression in volume_context, volume_id: {request.volume_id}"
         )
         expr = None
+        podUid = None
         for k, v in request.volume_context.items():
+            logger.debug(f"{k=} {v=}")
             if k == "expr":
                 expr = v
+            if k == "csi.storage.k8s.io/pod.uid":
+                podUid = v
 
         if expr is None:
             raise Exception("Couldn't find expression")
+        if podUid is None:
+            raise Exception("Couldn't find podUid")
 
         logger.debug(
             msg=f"Evaluating Nix expression: {expr}, volume_id: {request.volume_id}"
@@ -350,49 +439,22 @@ class NodeServicer(csi_grpc.NodeBase):
                 error,
             )
 
-        await self.expressionQueue.put(expr)
-
-        packageName = str(evalRes.stdout).removeprefix("/nix/store/").removesuffix("/")
-
-        while not Path(f"/nix/var/cknix/{packageName}").exists():
-            for i in range(10):
-                if i == 0:
-                    logger.info(
-                        msg=f"Package {packageName} is not realized yet. Waiting 10 seconds."
-                    )
-                await asyncio.sleep(1)
-
-        if not Path(request.target_path).exists():
-            logger.debug(
-                msg=f"Creating {request.target_path} where store will be mounted"
-            )
-            Path(request.target_path).mkdir(parents=True, exist_ok=True)
-
-        # Initialize gcroots.json database
-        gcRootsPath = Path("/nix/var/cknix/gcroots.json")
-        if not gcRootsPath.exists():
-            gcRootsPath.parent.mkdir(parents=True)
-            gcRootsPath.write_text(json.dumps([]))
-        gcRootsList: list = json.loads(gcRootsPath.read_text())
-        gcRootsList.append(
-            {
-                "packageName": packageName,
-                "targetPath": request.target_path,
-            }
+        fakeRoot = await asyncio.to_thread(
+            realize_store, expr, podUid, True, True, True
         )
-        # Write gcRoots database back to disk
-        gcRootsPath.write_text(json.dumps(gcRootsList))
 
-        logger.debug(
-            msg=f"Mounting /nix/var/cknix/{packageName} on {request.target_path}"
-        )
+        if fakeRoot is None:
+            logger.error("Unable to build fakeStore")
+            return
+
+        logger.debug(msg=f"Mounting {fakeRoot} on {request.target_path}")
         await helpers.mkdir(request.target_path)
         await helpers.run_subprocess(
             [
                 "mount",
                 "--bind",
                 "--verbose",
-                f"/nix/var/cknix/{packageName}/nix",
+                f"{fakeRoot}/nix",
                 request.target_path,
             ]
         )
@@ -414,58 +476,6 @@ class NodeServicer(csi_grpc.NodeBase):
                 request.target_path,
             ]
         )
-
-        # Initialize gcroots.json database
-        gcRootsPath = Path("/nix/var/cknix/gcroots.json")
-        if not gcRootsPath.exists():
-            gcRootsPath.parent.mkdir(parents=True)
-            gcRootsPath.write_text(json.dumps([]))
-        gcRootsList: list = json.loads(gcRootsPath.read_text())
-        # Remove gcRoot for the volume we're dismounting now
-        gcRootsList = list(
-            filter(lambda x: x["targetPath"] != request.target_path, gcRootsList)
-        )
-        # Remove gcRoot for targetPaths that doesn't exist anymore
-        gcRootsList = list(
-            filter(lambda x: Path(x["targetPath"]).exists(), gcRootsList)
-        )
-        # Write gcRoots database back to disk
-        gcRootsPath.write_text(json.dumps(gcRootsList))
-
-        # Get all valid gcRoot names
-        validRootNames = [d["packageName"] for d in gcRootsList]
-
-        # Loop the directories we wanna clean and remove anything that doesn't belog
-        for cleanPath in ["/nix/var/nix/gcroots", "/nix/var/cknix"]:
-            for gcRoot in Path(cleanPath).iterdir():
-                name = (
-                    str(gcRoot)
-                    .removeprefix("/nix/var/nix/gcroots/")
-                    .removeprefix("/nix/var/cknix/")
-                )
-                # Make sure it looks like a package before removing it
-                if not bool(re.match(r"^[a-z0-9]{32}-[^-]+-", name)):
-                    continue
-                # Check that we're not one of the valid path and remove otherwise
-                if name not in validRootNames:
-                    logger.info(msg=f"Removing {gcRoot}")
-                    await helpers.run_subprocess(
-                        [
-                            "rm",
-                            "--recursive",
-                            "--force",
-                            str(gcRoot),
-                        ]
-                    )
-
-        # Move this to a scheduler and look further into if there's an easy way
-        # to estimate how much garbage-collecting will reclaim.
-        # logger.info(msg=f"Collecting garbage")
-        # await helpers.run_subprocess([
-        #     "nix",
-        #     "store",
-        #     "gc",
-        # ])
 
         reply = csi_pb2.NodeUnpublishVolumeResponse()
         await stream.send_message(reply)
@@ -541,17 +551,3 @@ async def serve(args: argparse.Namespace, expressionQueue: asyncio.Queue[str]):
     await server.start(sock=sock)
     logger.info(f"CSI driver (grpclib) listening on unix://{sock_path}")
     await server.wait_closed()
-
-
-@kopf.on.create("expressions.cknix.cool")  # type: ignore
-@kopf.on.update("expressions.cknix.cool", field="data.expr")  # type: ignore
-async def handleExpression(name, namespace, spec, old, new, diff, **_):
-    res = await helpers.kubectlNS(namespace, ["get", helpers.CRDNAME, name])
-    obj = json.loads(res.stdout)
-    res = await helpers.build(obj["data"]["expr"])
-    pass
-
-
-# @kopf.on.create('pods') # type: ignore
-# async def onPodUpdate(name, namespace, spec, old, new, diff, **_):
-#     pass

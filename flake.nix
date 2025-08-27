@@ -147,6 +147,7 @@
             kr8s
             cknix-csi
             shell-operator
+            kubenixEval
             ;
           repoenv = pkgs.buildEnv {
             name = "repoenv";

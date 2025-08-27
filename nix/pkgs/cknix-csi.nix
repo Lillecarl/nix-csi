@@ -1,5 +1,4 @@
 {
-  buildPythonPackage,
   buildPythonApplication,
   setuptools-scm,
   kopf,
@@ -9,6 +8,7 @@
   rsync,
   aiopath,
   aiosqlite,
+  plumbum,
 }:
 let
   pname = "cknix-csi";
@@ -27,5 +27,6 @@ buildPythonApplication {
     rsync
     aiopath
     aiosqlite
+    plumbum
   ];
 }
