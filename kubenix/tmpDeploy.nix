@@ -43,7 +43,7 @@
             {
               name = "cknix-volume";
               mountPath = "/nix";
-              readOnly = true;
+              readOnly = false;
             }
           ];
         };
@@ -53,7 +53,20 @@
             name = "cknix-volume";
             csi = {
               driver = "cknix.csi.store";
-              volumeAttributes.expr = "(import /cknix/default.nix).spkgs.hello.outPath";
+              volumeAttributes.expr = # nix
+                ''
+                  let
+                    cknix = (import /cknix/default.nix);
+                    pkgs = cknix.spkgs;
+                  in
+                    pkgs.buildEnv {
+                      name = "testEnv";
+                      paths = [
+                        pkgs.hello
+                        pkgs.lix
+                      ];
+                    }
+                '';
             };
           }
         ];

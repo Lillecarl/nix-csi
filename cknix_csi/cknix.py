@@ -1,113 +1,95 @@
-import asyncio
 import logging
 import os
 import socket
-import json
 import argparse
-import sys
-from plumbum import local
 
-from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 from google.protobuf.wrappers_pb2 import BoolValue
 from grpclib.server import Server
 from grpclib.exceptions import GRPCError
 from grpclib.const import Status
 from csi import csi_grpc, csi_pb2
+from pathlib import Path
 
 from . import helpers
 
-logger = logging.getLogger("csi.driver")
+logger = logging.getLogger("cknix-csi")
+
+# Disable logging for stuff we have no control over
+for loggerStr in [
+    "sh.command.process.streamreader",
+    "sh.stream_bufferer",
+    "sh.streamreader",
+    "sh.command.process",
+    # "sh.command",
+]:
+    loopLogger = logging.getLogger(loggerStr)
+    loopLogger.setLevel(logging.CRITICAL)
 
 CSI_PLUGIN_NAME = "cknix.csi.store"
 CSI_VENDOR_VERSION = "0.1.0"
 
-# todo: This shouldn't be a requirement for the controller part
 KUBE_NODE_NAME = os.environ.get("KUBE_NODE_NAME")
-if KUBE_NODE_NAME is None:
-    raise Exception("Please make sure KUBE_NODE_NAME is set")
-KUBE_NODE_NAME = str(KUBE_NODE_NAME)
+# if KUBE_NODE_NAME is None:
+#     raise Exception("Please make sure KUBE_NODE_NAME is set")
+
+SUBSTOREPATH = "/nix/var/cknix"
 
 
 def log_request(method_name: str, request: Any):
     logger.info("Received %s:\n%s", method_name, request)
 
 
-#!/usr/bin/env python3
-"""Build Nix store derivations using plumbum."""
-
-
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger("createstore")
-logger.setLevel(logging.DEBUG)
-
-substorePath = "/nix/var/cknix"
-
-nix = local["nix"]
-mkdir = local["mkdir"]
-cp = local["cp"]
-nix_store = local["nix-store"]
-ln = local["ln"]
-
-
-def realize_store(
+# nix eval + nix build + cp + nix_init_db
+async def realize_store(
     expr: str,
     root_name: str,
 ) -> None | str:
     """Build and realize a Nix expression into a sub/fake store."""
     # Build the expression
-    build_result = nix(
+    build_result = await helpers.run_subprocess(
+        "nix",
         "build",
         "--impure",
         "--no-link",
         "--print-out-paths",
         "--expr",
         expr,
-        stderr=sys.stderr,
     )
-    if not build_result:
-        logger.error("Build failed")
-        return None
+    if build_result.retcode != 0:
+        raise Exception("Build failed")
 
     # Get the resulting storepath
-    package_path = build_result.strip()
-    # Extract the package name
-    package_name = package_path.removeprefix("/nix/store/").removesuffix("/")
+    package_path = build_result.stdout.strip()
 
-    fakeroot = f"{substorePath}/{root_name}"
+    fakeroot = f"{SUBSTOREPATH}/{root_name}"
     prefix = f"{fakeroot}/nix"
     package_result_path = f"{prefix}/var/result"
     # Capitalized to emphasise they're Nix environment variables
     NIX_STATE_DIR = f"{prefix}/var/nix"
     NIX_STORE_DIR = f"{prefix}/store"
 
-    if local.path(fakeroot).is_dir():
-        print(f"Package {package_name} {root_name} is already realized")
-        return package_name
-
     # Get dependency paths
-    path_info = nix("path-info", "--recursive", package_path)
-    path_list = path_info.strip().splitlines()
+    path_info = await helpers.run_subprocess(
+        "nix", "path-info", "--recursive", package_path
+    )
+    path_list = path_info.stdout.strip().splitlines()
 
     # Create container store structure
-    mkdir("--parents", NIX_STATE_DIR)
-    mkdir("--parents", NIX_STORE_DIR)
+    Path(NIX_STATE_DIR).mkdir(parents=True, exist_ok=True)
+    Path(NIX_STORE_DIR).mkdir(parents=True, exist_ok=True)
 
     # Copy dependencies to substore
     for path in path_list:
-        path = path.strip()
-        cp("--recursive", "--link", path, NIX_STORE_DIR)
+        await helpers.run_subprocess("cp", "--recursive", "--link", path, NIX_STORE_DIR)
 
     # Copy package contents to result. This is a "well-know" path
-    cp("--recursive", "--link", package_path, package_result_path)
+    await helpers.run_subprocess(
+        "cp", "--recursive", "--link", package_path, package_result_path
+    )
 
     # Create Nix database
-    # Use Plumbum combinators to pipe from --dump-db to --load-db
-    # We only export the paths we need from the path_list
-    (
-        nix_store["--dump-db", *path_list]
-        | nix_store["--load-db"].with_env(USER="nobody", NIX_STATE_DIR=NIX_STATE_DIR)
-    )()
+    await helpers.run_subprocess2("nix_init_db", NIX_STATE_DIR, *path_list)
 
     return fakeroot
 
@@ -327,10 +309,10 @@ class NodeServicer(csi_grpc.NodeBase):
         )
 
         evalRes = await helpers.run_subprocess(
-            ["nix", "eval", "--impure", "--raw", "--expr", expr]
+            "nix", "eval", "--impure", "--raw", "--expr", expr
         )
 
-        if evalRes.retcode != 0:
+        if evalRes is None:
             error = f"""
                 Failed to evaluate expression:
                 {expr}
@@ -341,7 +323,7 @@ class NodeServicer(csi_grpc.NodeBase):
                 error,
             )
 
-        fakeRoot = await asyncio.to_thread(realize_store, expr, podUid)
+        fakeRoot = await realize_store(expr, podUid)
 
         if fakeRoot is None:
             error = "Unable to build fakeStore"
@@ -351,17 +333,36 @@ class NodeServicer(csi_grpc.NodeBase):
                 error,
             )
 
+        sourcepath = Path(f"{fakeRoot}/nix")
+        targetpath = Path(request.target_path)
+
         logger.debug(msg=f"Mounting {fakeRoot}/nix on {request.target_path}")
-        await helpers.mkdir(request.target_path)
-        await helpers.run_subprocess(
-            [
+        Path(request.target_path).mkdir(parents=True, exist_ok=True)
+        if request.readonly:
+            await helpers.run_subprocess(
                 "mount",
                 "--bind",
                 "--verbose",
-                f"{fakeRoot}/nix",
-                request.target_path,
-            ]
-        )
+                "-o",
+                "ro",
+                str(sourcepath),
+                str(targetpath),
+            )
+        else:
+            parent = targetpath.parent
+            workdir = parent.joinpath("workdir")
+            upperdir = parent.joinpath("upperdir")
+            workdir.mkdir(parents=True, exist_ok=True)
+            upperdir.mkdir(parents=True, exist_ok=True)
+            await helpers.run_subprocess(
+                "mount",
+                "-t",
+                "overlay",
+                "overlay",
+                "-o",
+                f"lowerdir={sourcepath},upperdir={upperdir},workdir={workdir}",
+                str(targetpath),
+            )
 
         reply = csi_pb2.NodePublishVolumeResponse()
         await stream.send_message(reply)
@@ -373,13 +374,7 @@ class NodeServicer(csi_grpc.NodeBase):
         log_request("NodeUnpublishVolume", request)
 
         logger.debug(msg=f"Unmounting {request.target_path}")
-        await helpers.run_subprocess(
-            [
-                "umount",
-                "--verbose",
-                request.target_path,
-            ]
-        )
+        await helpers.run_subprocess("umount", "--verbose", request.target_path)
 
         reply = csi_pb2.NodeUnpublishVolumeResponse()
         await stream.send_message(reply)

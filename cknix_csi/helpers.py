@@ -16,8 +16,9 @@ class ProcRet:
         self.stderr = stderr
         self.cmd = cmd
 
+
 # simple subprocess function with automatic error printing
-async def run_subprocess(cmd: list[str], silent=False) -> ProcRet:
+async def run_subprocess(*cmd, silent=False) -> ProcRet:
     if not silent:
         logger.debug(f"Running command: {' '.join(cmd)}")
     proc = await asyncio.create_subprocess_exec(
@@ -42,18 +43,23 @@ async def run_subprocess(cmd: list[str], silent=False) -> ProcRet:
     )
 
 
-# subprocess cp
-async def cp(src: str, dst: str, args: list[str] = [], silent=False) -> ProcRet:
-    commonArgs = [
-        "cp",
-        "--recursive",
-        "--reflink=always",
-        "--archive",
-    ]
+# simple subprocess function with automatic error printing
+async def run_subprocess2(*cmd, silent=False) -> ProcRet:
+    if not silent:
+        logger.debug(f"Running command: {' '.join(cmd)}")
+    proc = await asyncio.create_subprocess_exec(*cmd)
+    await proc.wait()
 
-    result = await run_subprocess(commonArgs + args + [src, dst], silent=silent)
+    retcode = proc.returncode
+    if retcode is None:
+        raise Exception("No returncode from command, wtf?")
 
-    return result
+    if retcode != 0:
+        logger.error(msg=f"Command error, code: {retcode}")
+        logger.error(f"Command: {' '.join(cmd)}")
+        logger.error(msg="stdout:")
+
+    return ProcRet(retcode, "", "", " ".join(cmd))
 
 
 async def kubectlNS(namespace: str, args: list[str]):
@@ -64,77 +70,3 @@ async def kubectlNS(namespace: str, args: list[str]):
     ]
     final = base + args
     return await run_subprocess(final)
-
-
-# our cp command with --parents
-async def cpp(src: str, dst: str) -> ProcRet:
-    return await cp(src, dst, ["--parents"], silent=True)
-
-
-async def ln(pointer: str, symlink: str) -> ProcRet:
-    return await run_subprocess(
-        [
-            "ln",
-            "--symbolic",
-            "--force",
-            pointer,
-            symlink,
-        ]
-    )
-
-
-async def mkdir(path: str) -> ProcRet:
-    result = await run_subprocess(
-        [
-            "mkdir",
-            "--parents",
-            path,
-        ]
-    )
-
-    return result
-
-
-async def eval(expr: str) -> ProcRet:
-    result = await run_subprocess(
-        [
-            "nix",
-            "eval",
-            "--impure",
-            "--expr",
-            expr,
-        ]
-    )
-
-    return result
-
-
-async def build(expr: str) -> ProcRet:
-    result = await run_subprocess(
-        [
-            "nix",
-            "build",
-            "--no-link",
-            "--print-out-paths",
-            "--impure",
-            "--expr",
-            expr,
-        ]
-    )
-
-    return result
-
-
-async def pathInfo(expr: str) -> ProcRet:
-    result = await run_subprocess(
-        [
-            "nix",
-            "path-info",
-            "--recursive",
-            "--impure",
-            "--expr",
-            expr,
-        ]
-    )
-
-    return result

@@ -58,6 +58,19 @@
               foreground { echo "Initializing..."}
             '';
 
+        # execline script that takes NIX_STATE_DIR as first arg and storepaths
+        # as consecutive args. Dumps nix database and imports it into NIX_STATE_DIR
+        nix_init_db =
+          pkgs.writeScriptBin "nix_init_db" # execline
+            ''
+              #! ${lib.getExe' pkgs.execline "execlineb"} -s1
+              emptyenv -p
+              pipeline { nix-store --dump-db $@ }
+              export USER nobody
+              export NIX_STATE_DIR $1
+              exec nix-store --load-db
+            '';
+
         nix2containerImage = nix2containerLib.buildImage {
           name = "cknix-dev";
           config = {
@@ -114,7 +127,7 @@
           ];
         };
         cknix-csi = pkgs.python3Packages.callPackage ./nix/pkgs/cknix-csi.nix {
-          inherit csi-proto-python;
+          inherit csi-proto-python nix_init_db;
         };
         shell-operator = pkgs.callPackage ./nix/pkgs/shell-operator.nix { };
 
@@ -122,12 +135,9 @@
           p: with p; [
             cknix-csi
             grpclib
-            kopf
             csi-proto-python
-            aiopath
-            aiosqlite
-            plumbum
             kr8s
+            sh
           ]
         );
 
@@ -162,6 +172,7 @@
               ourPython
               pkgs.skopeo
               pkgs.uv
+              nix_init_db
             ];
           };
 

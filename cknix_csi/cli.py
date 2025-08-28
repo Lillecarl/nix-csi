@@ -1,11 +1,7 @@
-from collections import deque
-import os
 import asyncio
 import logging
 import argparse
-import threading
 from . import cknix
-
 
 def parse_args():
     parser = argparse.ArgumentParser(description="cknix CSI Driver")
@@ -23,27 +19,6 @@ def parse_args():
     return parser.parse_args()
 
 
-async def expressionQueueWorker(expressionQueue: asyncio.Queue[str]):
-    logger = logging.getLogger("cknix-csi")
-    expressionDeque: deque[str] = deque()
-    try:
-        while True:
-            expressionDeque.append(await expressionQueue.get())
-            seen = set()
-            newExpressionDeque = deque()
-            for item in expressionDeque:
-                if item not in seen:
-                    seen.add(item)
-                    newExpressionDeque.append(item)
-            expressionDeque = newExpressionDeque
-
-            for expr in expressionDeque:
-                logger.info(f"Building Nix expression: {expr}")
-                await cknix.realizeExpr(expr)
-
-    except asyncio.CancelledError:
-        pass
-
 async def main_async():
     args = parse_args()
     logging.basicConfig(
@@ -59,6 +34,7 @@ async def main_async():
     hpacklogger.setLevel(logging.INFO)
 
     await cknix.serve(args)
+
 
 def main():
     asyncio.run(main_async())

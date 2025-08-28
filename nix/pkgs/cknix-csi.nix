@@ -1,14 +1,12 @@
 {
   buildPythonApplication,
   setuptools-scm,
-  kopf,
   csi-proto-python,
   kubectl,
   util-linux,
-  rsync,
-  aiopath,
-  aiosqlite,
-  plumbum,
+  sh,
+  uutils-coreutils-noprefix,
+  nix_init_db,
 }:
 let
   pname = "cknix-csi";
@@ -20,13 +18,11 @@ buildPythonApplication {
   pyproject = true;
   nativeBuildInputs = [ setuptools-scm ];
   propagatedBuildInputs = [
-    kopf
+    uutils-coreutils-noprefix
+    nix_init_db
+    sh
     csi-proto-python
     kubectl
     util-linux
-    rsync
-    aiopath
-    aiosqlite
-    plumbum
   ];
 }
