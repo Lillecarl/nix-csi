@@ -2,10 +2,6 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs";
     flake-utils.url = "github:numtide/flake-utils";
-    treefmt-nix = {
-      url = "github:numtide/treefmt-nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
     nix2container = {
       url = "github:nlewo/nix2container";
       # url = "path:/home/lillecarl/Code/nix2container";
@@ -53,11 +49,22 @@
         };
         nix2containerLib = inputs.nix2container.packages.${pkgs.system}.nix2container;
 
+        initScript =
+          let
+          in
+          pkgs.writeScriptBin "cknix-init" # execline
+            ''
+              #! ${lib.getExe' pkgs.execline "execlineb"}
+              foreground { echo "Initializing..."}
+            '';
+
         nix2containerImage = nix2containerLib.buildImage {
           name = "cknix-dev";
           config = {
-            # Should be some supervisor
-            entrypoint = [ "${lib.getExe pkgs.bash}" ];
+            entrypoint = [
+              (lib.getExe pkgs.tini)
+              initScript
+            ];
           };
           # Packages "extracted" from their storepaths
           copyToRoot = [
@@ -107,7 +114,7 @@
           ];
         };
         cknix-csi = pkgs.python3Packages.callPackage ./nix/pkgs/cknix-csi.nix {
-          inherit kopf csi-proto-python aiopath;
+          inherit csi-proto-python;
         };
         shell-operator = pkgs.callPackage ./nix/pkgs/shell-operator.nix { };
 
@@ -137,7 +144,7 @@
         );
       in
       {
-        packages = rec {
+        packages = {
           inherit
             certbuilder
             containerimage
@@ -157,53 +164,10 @@
               pkgs.uv
             ];
           };
-          createstore = pkgs.writeScriptBin "cknix-local" ''
-            #! ${lib.getExe pkgs.bash}
-            export PATH=${repoenv}/bin:$PATH
-            ./createstore.py
-          '';
-          cknix-local = pkgs.writeScriptBin "cknix-local" ''
-            #!${pkgs.bash}/bin/bash
-
-            # cknix-local - Run shell-operator with cknix hooks
-
-            export SHELL_OPERATOR_HOOKS_DIR="$PWD/shell-operator/hooks"
-            export LOG_LEVEL="info"
-
-            # Create temporary directory for debug socket to avoid permission errors
-            DEBUG_SOCKET_DIR="$(${pkgs.coreutils}/bin/mktemp -d)"
-            DEBUG_SOCKET="$DEBUG_SOCKET_DIR/shell-operator-debug.sock"
-
-            if [ ! -d "$SHELL_OPERATOR_HOOKS_DIR" ]; then
-              echo "Error: hooks directory not found at $SHELL_OPERATOR_HOOKS_DIR"
-              echo "Please run from the cknix project root directory"
-              exit 1
-            fi
-
-            echo "Starting cknix shell-operator..."
-            echo "Hooks directory: $SHELL_OPERATOR_HOOKS_DIR"
-            echo "Log level: $LOG_LEVEL"
-            echo "Debug socket: $DEBUG_SOCKET"
-
-            exec ${shell-operator}/bin/shell-operator start --debug-unix-socket="$DEBUG_SOCKET" "$@"
-          '';
-          supervisord = pkgs.python3Packages.supervisor // {
-            meta = pkgs.python3Packages.supervisor // {
-              mainProgram = "supervisord";
-            };
-          };
-          supervisorctl = pkgs.python3Packages.supervisor // {
-            meta = pkgs.python3Packages.supervisor // {
-              mainProgram = "supervisorctl";
-            };
-          };
 
           # Kubenix-generated manifests
           cknix-manifests = kubenixEval.config.kubernetes.resultYAML;
-          cknix-manifests-json = pkgs.writeTextFile {
-            name = "cknix-manifests.json";
-            text = builtins.toJSON kubenixEval.config.kubernetes.result;
-          };
+          cknix-manifests-json = kubenixEval.config.kubernetes.result;
         };
         legacyPackages = pkgs;
       }

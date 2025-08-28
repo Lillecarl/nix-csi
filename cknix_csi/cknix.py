@@ -53,9 +53,6 @@ ln = local["ln"]
 def realize_store(
     expr: str,
     root_name: str,
-    hardlink: bool = True,
-    reflink: bool = True,
-    copy: bool = True,
 ) -> None | str:
     """Build and realize a Nix expression into a sub/fake store."""
     # Build the expression
@@ -98,43 +95,11 @@ def realize_store(
 
     # Copy dependencies to substore
     for path in path_list:
-        if path.strip():
-            pathargs = [path, NIX_STORE_DIR]
-            # Overly verbose for error reportings sake
-            if hardlink:
-                try:
-                    cp("--recursive", "--link", *pathargs)
-                    continue
-                except Exception as ex:
-                    logger.error("Unable to hardlink")
-                    logger.error(ex)
-                    hardlink = False
-            if reflink:
-                try:
-                    cp("--recursive", "--reflink=always", *pathargs)
-                    continue
-                except Exception:
-                    logger.error("Unable to reflink")
-                    reflink = False
-            if copy:
-                try:
-                    # coreutils cp will reflink if it can
-                    cp("--recursive", *pathargs)
-                    continue
-                except Exception:
-                    logger.error("Unable to copy")
-                    copy = False
-            else:
-                raise Exception(
-                    "No configured and functional store cloning method available"
-                )
+        path = path.strip()
+        cp("--recursive", "--link", path, NIX_STORE_DIR)
 
     # Copy package contents to result. This is a "well-know" path
-    if hardlink:
-        cp("--recursive", "--link", package_path, package_result_path)
-    else:
-        # coreutils cp will reflink if it can
-        cp("--recursive", package_path, package_result_path)
+    cp("--recursive", "--link", package_path, package_result_path)
 
     # Create Nix database
     # Use Plumbum combinators to pipe from --dump-db to --load-db
@@ -144,71 +109,7 @@ def realize_store(
         | nix_store["--load-db"].with_env(USER="nobody", NIX_STATE_DIR=NIX_STATE_DIR)
     )()
 
-    # Link result into gcroots
-    cknix_roots = "/nix/var/nix/gcroots/cknix"
-    mkdir("--parents", cknix_roots)
-    ln("--symbolic", "--force", package_path, f"{cknix_roots}/{root_name}")
-
     return fakeroot
-
-
-async def getExpressionFromPvc(name: str, namespace: str, request: Any):
-    pvcResult = await helpers.run_subprocess(
-        [
-            "kubectl",
-            f"--namespace={namespace}",
-            "--output=json",
-            "get",
-            "persistentvolumeclaims",
-            name,
-        ]
-    )
-    if pvcResult.retcode != 0:
-        return
-
-    pvcSpec = json.loads(pvcResult.stdout)
-
-    if pvcSpec is None:
-        error = f"Failed to find PVC with volumeName {request.name}"
-        logger.error(msg=error)
-        raise GRPCError(
-            Status.INTERNAL,
-            error,
-        )
-
-    exprName = None
-    try:
-        exprName = pvcSpec["metadata"]["annotations"]["cknix-expr"]
-    except Exception:
-        error = f"Failed to get cknix-expr annotation from PVC {pvcSpec['metadata']['name']}{request.name}"
-        logger.error(msg=error)
-        raise GRPCError(
-            Status.INTERNAL,
-            error,
-        )
-
-    exprResult = await helpers.run_subprocess(
-        [
-            "kubectl",
-            f"--namespace={namespace}",
-            "--output=json",
-            "get",
-            "expressions.cknix.cool",
-            exprName,
-        ]
-    )
-
-    if exprResult.retcode != 0:
-        error = f"Failed to get cknix expression {exprName}"
-        logger.error(msg=error)
-        raise GRPCError(
-            Status.INTERNAL,
-            error,
-        )
-
-    expr = json.loads(exprResult.stdout)["data"]["expr"]
-    logger.info(msg=f"Found expression {exprName} with expression {expr}")
-    return expr
 
 
 class IdentityServicer(csi_grpc.IdentityBase):
@@ -397,9 +298,6 @@ class ControllerServicer(csi_grpc.ControllerBase):
 
 
 class NodeServicer(csi_grpc.NodeBase):
-    def __init__(self, expressionQueue: asyncio.Queue[str]):
-        self.expressionQueue = expressionQueue
-
     async def NodePublishVolume(self, stream):
         request: csi_pb2.NodePublishVolumeRequest | None = await stream.recv_message()
         if request is None:
@@ -412,11 +310,12 @@ class NodeServicer(csi_grpc.NodeBase):
         expr = None
         podUid = None
         for k, v in request.volume_context.items():
-            logger.debug(f"{k=} {v=}")
-            if k == "expr":
-                expr = v
-            if k == "csi.storage.k8s.io/pod.uid":
-                podUid = v
+            logger.debug(f"Context: {k=}={v=}")
+            match k:
+                case "expr":
+                    expr = v
+                case "csi.storage.k8s.io/pod.uid":
+                    podUid = v
 
         if expr is None:
             raise Exception("Couldn't find expression")
@@ -432,22 +331,27 @@ class NodeServicer(csi_grpc.NodeBase):
         )
 
         if evalRes.retcode != 0:
-            error = f"Failed to evaluate {expr}"
+            error = f"""
+                Failed to evaluate expression:
+                {expr}
+            """
             logger.error(msg=error)
             raise GRPCError(
                 Status.INTERNAL,
                 error,
             )
 
-        fakeRoot = await asyncio.to_thread(
-            realize_store, expr, podUid, True, True, True
-        )
+        fakeRoot = await asyncio.to_thread(realize_store, expr, podUid)
 
         if fakeRoot is None:
-            logger.error("Unable to build fakeStore")
-            return
+            error = "Unable to build fakeStore"
+            logger.error(msg=error)
+            raise GRPCError(
+                Status.INTERNAL,
+                error,
+            )
 
-        logger.debug(msg=f"Mounting {fakeRoot} on {request.target_path}")
+        logger.debug(msg=f"Mounting {fakeRoot}/nix on {request.target_path}")
         await helpers.mkdir(request.target_path)
         await helpers.run_subprocess(
             [
@@ -519,7 +423,7 @@ class NodeServicer(csi_grpc.NodeBase):
         raise Exception("NodeUnstageVolume not implemented")
 
 
-async def serve(args: argparse.Namespace, expressionQueue: asyncio.Queue[str]):
+async def serve(args: argparse.Namespace):
     sock_path = "/csi/csi.sock"
     try:
         os.unlink(sock_path)
@@ -532,7 +436,7 @@ async def serve(args: argparse.Namespace, expressionQueue: asyncio.Queue[str]):
         server = Server(
             [
                 IdentityServicer(),
-                NodeServicer(expressionQueue),
+                NodeServicer(),
             ]
         )
     if getattr(args, "controller"):

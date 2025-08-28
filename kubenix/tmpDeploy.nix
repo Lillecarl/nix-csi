@@ -53,7 +53,7 @@
             name = "cknix-volume";
             csi = {
               driver = "cknix.csi.store";
-              volumeAttributes.expr = "(import /cknix/default.nix).spkgs.mtr.outPath";
+              volumeAttributes.expr = "(import /cknix/default.nix).spkgs.hello.outPath";
             };
           }
         ];

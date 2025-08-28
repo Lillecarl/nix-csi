@@ -4,7 +4,6 @@ import asyncio
 import logging
 import argparse
 import threading
-import kopf
 from . import cknix
 
 
@@ -23,9 +22,6 @@ def parse_args():
     )
     return parser.parse_args()
 
-
-def kopf_thread():
-    asyncio.run(kopf.operator())
 
 async def expressionQueueWorker(expressionQueue: asyncio.Queue[str]):
     logger = logging.getLogger("cknix-csi")
@@ -62,21 +58,7 @@ async def main_async():
     hpacklogger = logging.getLogger("hpack.hpack")
     hpacklogger.setLevel(logging.INFO)
 
-    expressionQueue: asyncio.Queue[str] = asyncio.Queue()
-
-    tasks = list()
-
-    if getattr(args, "controller"):
-        thread = threading.Thread(target=kopf_thread)
-        thread.start()
-        tasks.append(asyncio.to_thread(thread.join))
-    if getattr(args, "node"):
-        tasks.append(expressionQueueWorker(expressionQueue))
-
-    tasks.append(cknix.serve(args, expressionQueue))
-
-    await asyncio.gather(*tasks)
-
+    await cknix.serve(args)
 
 def main():
     asyncio.run(main_async())
