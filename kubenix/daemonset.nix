@@ -124,7 +124,7 @@
               {
                 name = "cknix-store";
                 hostPath = {
-                  path = "/var/lib/cknix/nix";
+                  path = config.hostMountPath;
                   type = "DirectoryOrCreate";
                 };
               }
