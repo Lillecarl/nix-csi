@@ -252,13 +252,9 @@ class NodeServicer(csi_grpc.NodeBase):
             raise ValueError("NodePublishVolumeRequest is None")
         log_request("NodePublishVolume", request)
 
-        logger.debug(
-            msg=f"Looking for Nix expression in volume_context, volume_id: {request.volume_id}"
-        )
         expr = None
         podUid = None
         for k, v in request.volume_context.items():
-            logger.debug(f"Context: {k=}={v=}")
             match k:
                 case "expr":
                     expr = v
@@ -272,6 +268,7 @@ class NodeServicer(csi_grpc.NodeBase):
 
         expressionFile = Path(tempfile.mktemp(suffix=".nix"))
         expressionFile.write_text(expr)
+
         logger.debug(
             msg=f"Evaluating Nix expression: {expr}, volume_id: {request.volume_id}"
         )
@@ -357,8 +354,8 @@ class NodeServicer(csi_grpc.NodeBase):
             gcPath = CKNIX_ROOT.joinpath(podUid)
             shutil.rmtree(gcPath)
         except Exception as ex:
-            print("Unable to get poduid for GC")
-            print(ex)
+            logger.error("Unable to get poduid for GC")
+            logger.error(ex)
         await helpers.run_subprocess("umount", "--verbose", request.target_path)
 
         reply = csi_pb2.NodeUnpublishVolumeResponse()
