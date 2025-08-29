@@ -77,9 +77,9 @@ async def realize_store(
         "rsync", "--archive", "--hard-links", *paths, str(NIX_STORE_DIR)
     )
 
-    # Copy package contents to result. This is a "well-know" path
-    shutil.copytree(
-        packagePath, packageResultPath, copy_function=os.link, dirs_exist_ok=True
+    # Link root derivation to /nix/var/result in the container. This is a "well-know" path
+    await helpers.run_subprocess(
+        "ln", "--symbolic", str(packagePath), str(packageResultPath)
     )
 
     # Create Nix database
