@@ -10,7 +10,6 @@
     ./crd.nix
     ./csidriver.nix
     ./storageclass.nix
-    ./supervisorConfig.nix
     ./clusterRoleBinding.nix
     ./serviceAccount.nix
     ./customResourceAttrs.nix

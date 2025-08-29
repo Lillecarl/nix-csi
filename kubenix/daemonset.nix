@@ -67,10 +67,6 @@
                     mountPath = "/registration";
                   }
                   {
-                    name = "supervisorconfig";
-                    mountPath = "/etc/supervisor";
-                  }
-                  {
                     name = "cknixdev";
                     mountPath = "/cknix";
                   }
@@ -149,10 +145,6 @@
               {
                 name = "registration-dir";
                 hostPath.path = "/var/lib/kubelet/plugins_registry";
-              }
-              {
-                name = "supervisorconfig";
-                configMap.name = "supervisorconfig";
               }
               {
                 name = "cknixdev";
