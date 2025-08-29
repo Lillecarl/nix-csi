@@ -24,7 +24,7 @@ KUBE_NODE_NAME = os.environ.get("KUBE_NODE_NAME")
 # if KUBE_NODE_NAME is None:
 #     raise Exception("Please make sure KUBE_NODE_NAME is set")
 
-SUBSTOREPATH = Path("/nix/var/cknix")
+CKNIX_ROOT = Path("/nix/var/cknix")
 
 
 def log_request(method_name: str, request: Any):
@@ -51,43 +51,41 @@ async def realize_store(
         raise Exception("Build failed")
 
     # Get the resulting storepath
-    package_path = build_result.stdout.strip()
+    packagePath = build_result.stdout.strip()
 
-    fakeroot = SUBSTOREPATH.joinpath(root_name)
-    prefix = fakeroot.joinpath("nix")
-    package_result_path = prefix.joinpath("var/result")
+    fakeRoot = CKNIX_ROOT.joinpath(root_name)
+    cknixPrefix = fakeRoot.joinpath("nix")
+    packageResultPath = cknixPrefix.joinpath("var/result")
     # Capitalized to emphasise they're Nix environment variables
-    NIX_STATE_DIR = prefix.joinpath("var/nix")
-    NIX_STORE_DIR = prefix.joinpath("store")
+    NIX_STATE_DIR = cknixPrefix.joinpath("var/nix")
+    NIX_STORE_DIR = cknixPrefix.joinpath("store")
 
     # Get dependency paths
     path_info = await helpers.run_subprocess(
-        "nix", "path-info", "--recursive", package_path
+        "nix", "path-info", "--recursive", packagePath
     )
     paths = path_info.stdout.strip().splitlines()
-    print("YOOOOOOOOO")
-    print(paths)
-    print("OOOOOOOOOY")
 
     # Create container store structure
     NIX_STATE_DIR.mkdir(parents=True, exist_ok=True)
     NIX_STORE_DIR.mkdir(parents=True, exist_ok=True)
 
     # Copy dependencies to substore
-    for srcpath in paths:
-        srcpath = Path(srcpath)
-        dstpath = NIX_STORE_DIR.joinpath(srcpath.name)
-        shutil.copytree(srcpath, dstpath, copy_function=os.link, dirs_exist_ok=True)
+    for srcPath in paths:
+        srcPath = Path(srcPath)
+        dstPath = NIX_STORE_DIR.joinpath(srcPath.name)
+        shutil.copytree(srcPath, dstPath, copy_function=os.link, dirs_exist_ok=True)
 
     # Copy package contents to result. This is a "well-know" path
     shutil.copytree(
-        package_path, package_result_path, copy_function=os.link, dirs_exist_ok=True
+        packagePath, packageResultPath, copy_function=os.link, dirs_exist_ok=True
     )
 
     # Create Nix database
+    # This is an execline script that runs nix-store --dump-db | NIX_STATE_DIR=something nix-store --load-db
     await helpers.run_subprocess2("nix_init_db", str(NIX_STATE_DIR), *paths)
 
-    return fakeroot
+    return fakeRoot
 
 
 class IdentityServicer(csi_grpc.IdentityBase):
