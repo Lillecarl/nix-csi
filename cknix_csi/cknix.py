@@ -4,6 +4,7 @@ import os
 import socket
 import argparse
 import shutil
+import tempfile
 
 from typing import Any
 from google.protobuf.wrappers_pb2 import BoolValue
@@ -269,15 +270,17 @@ class NodeServicer(csi_grpc.NodeBase):
         if podUid is None:
             raise Exception("Couldn't find podUid")
 
+        expressionFile = Path(tempfile.mktemp(suffix=".nix"))
+        expressionFile.write_text(expr)
         logger.debug(
             msg=f"Evaluating Nix expression: {expr}, volume_id: {request.volume_id}"
         )
 
         evalRes = await helpers.run_subprocess(
-            "nix", "eval", "--impure", "--raw", "--expr", expr
+            "nix", "eval", "--impure", "--raw", "--file", expressionFile
         )
 
-        if evalRes is None:
+        if evalRes.retcode != 0:
             error = f"""
                 Failed to evaluate expression:
                 {expr}
@@ -288,8 +291,7 @@ class NodeServicer(csi_grpc.NodeBase):
                 error,
             )
 
-        fakeRoot = await realize_store(expr, podUid)
-
+        fakeRoot = await realize_store(expressionFile, podUid)
         if fakeRoot is None:
             error = "Unable to build fakeStore"
             logger.error(msg=error)
@@ -297,6 +299,8 @@ class NodeServicer(csi_grpc.NodeBase):
                 Status.INTERNAL,
                 error,
             )
+
+        expressionFile.unlink()
 
         sourcePath = fakeRoot.joinpath("nix")
         targetPath = Path(request.target_path)
