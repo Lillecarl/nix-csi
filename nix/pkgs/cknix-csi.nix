@@ -7,6 +7,7 @@
   sh,
   uutils-coreutils-noprefix,
   nix_init_db,
+  rsync,
 }:
 let
   pname = "cknix-csi";
@@ -18,6 +19,7 @@ buildPythonApplication {
   pyproject = true;
   nativeBuildInputs = [ setuptools-scm ];
   propagatedBuildInputs = [
+    rsync
     uutils-coreutils-noprefix
     nix_init_db
     sh
