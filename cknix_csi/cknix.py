@@ -84,7 +84,7 @@ async def realize_store(
 
     # Create Nix database
     # This is an execline script that runs nix-store --dump-db | NIX_STATE_DIR=something nix-store --load-db
-    await helpers.run_subprocess2("nix_init_db", str(NIX_STATE_DIR), *paths)
+    await helpers.run_subprocess("nix_init_db", str(NIX_STATE_DIR), *paths)
 
     return fakeRoot
 
