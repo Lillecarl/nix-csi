@@ -1,7 +1,9 @@
+from enum import unique
 import logging
 import os
 import socket
 import argparse
+import shutil
 
 from typing import Any
 from google.protobuf.wrappers_pb2 import BoolValue
@@ -15,17 +17,6 @@ from . import helpers
 
 logger = logging.getLogger("cknix-csi")
 
-# Disable logging for stuff we have no control over
-for loggerStr in [
-    "sh.command.process.streamreader",
-    "sh.stream_bufferer",
-    "sh.streamreader",
-    "sh.command.process",
-    # "sh.command",
-]:
-    loopLogger = logging.getLogger(loggerStr)
-    loopLogger.setLevel(logging.CRITICAL)
-
 CSI_PLUGIN_NAME = "cknix.csi.store"
 CSI_VENDOR_VERSION = "0.1.0"
 
@@ -33,7 +24,7 @@ KUBE_NODE_NAME = os.environ.get("KUBE_NODE_NAME")
 # if KUBE_NODE_NAME is None:
 #     raise Exception("Please make sure KUBE_NODE_NAME is set")
 
-SUBSTOREPATH = "/nix/var/cknix"
+SUBSTOREPATH = Path("/nix/var/cknix")
 
 
 def log_request(method_name: str, request: Any):
@@ -44,7 +35,7 @@ def log_request(method_name: str, request: Any):
 async def realize_store(
     expr: str,
     root_name: str,
-) -> None | str:
+) -> None | Path:
     """Build and realize a Nix expression into a sub/fake store."""
     # Build the expression
     build_result = await helpers.run_subprocess(
@@ -62,34 +53,39 @@ async def realize_store(
     # Get the resulting storepath
     package_path = build_result.stdout.strip()
 
-    fakeroot = f"{SUBSTOREPATH}/{root_name}"
-    prefix = f"{fakeroot}/nix"
-    package_result_path = f"{prefix}/var/result"
+    fakeroot = SUBSTOREPATH.joinpath(root_name)
+    prefix = fakeroot.joinpath("nix")
+    package_result_path = prefix.joinpath("var/result")
     # Capitalized to emphasise they're Nix environment variables
-    NIX_STATE_DIR = f"{prefix}/var/nix"
-    NIX_STORE_DIR = f"{prefix}/store"
+    NIX_STATE_DIR = prefix.joinpath("var/nix")
+    NIX_STORE_DIR = prefix.joinpath("store")
 
     # Get dependency paths
     path_info = await helpers.run_subprocess(
         "nix", "path-info", "--recursive", package_path
     )
-    path_list = path_info.stdout.strip().splitlines()
+    paths = path_info.stdout.strip().splitlines()
+    print("YOOOOOOOOO")
+    print(paths)
+    print("OOOOOOOOOY")
 
     # Create container store structure
-    Path(NIX_STATE_DIR).mkdir(parents=True, exist_ok=True)
-    Path(NIX_STORE_DIR).mkdir(parents=True, exist_ok=True)
+    NIX_STATE_DIR.mkdir(parents=True, exist_ok=True)
+    NIX_STORE_DIR.mkdir(parents=True, exist_ok=True)
 
     # Copy dependencies to substore
-    for path in path_list:
-        await helpers.run_subprocess("cp", "--recursive", "--link", path, NIX_STORE_DIR)
+    for srcpath in paths:
+        srcpath = Path(srcpath)
+        dstpath = NIX_STORE_DIR.joinpath(srcpath.name)
+        shutil.copytree(srcpath, dstpath, copy_function=os.link, dirs_exist_ok=True)
 
     # Copy package contents to result. This is a "well-know" path
-    await helpers.run_subprocess(
-        "cp", "--recursive", "--link", package_path, package_result_path
+    shutil.copytree(
+        package_path, package_result_path, copy_function=os.link, dirs_exist_ok=True
     )
 
     # Create Nix database
-    await helpers.run_subprocess2("nix_init_db", NIX_STATE_DIR, *path_list)
+    await helpers.run_subprocess2("nix_init_db", str(NIX_STATE_DIR), *paths)
 
     return fakeroot
 
@@ -141,34 +137,6 @@ class ControllerServicer(csi_grpc.ControllerBase):
             request.capacity_range.required_bytes if request.capacity_range else 0
         )
 
-        expr = None
-        for k, v in request.parameters.items():
-            if k == "csi.storage.k8s.io/pvc/name":
-                pvcName = v
-            if k == "csi.storage.k8s.io/pvc/namespace":
-                pvcNamespace = v
-            if k == "expr":
-                expr = v
-
-        if expr is None:
-            raise Exception("Couldn't find expression")
-
-        buildResult = await helpers.build(expr)
-        packageName = (
-            str(buildResult.stdout).removeprefix("/nix/store/").removesuffix("/")
-        )
-
-        # Install packages into gcroots on controller
-        await helpers.run_subprocess(
-            [
-                "nix-env",
-                "--profile",
-                f"/nix/var/nix/profiles/{packageName}",
-                "--set",
-                buildResult.stdout,
-            ]
-        )
-
         reply = csi_pb2.CreateVolumeResponse(
             volume=csi_pb2.Volume(
                 volume_id=volume_id,
@@ -184,8 +152,6 @@ class ControllerServicer(csi_grpc.ControllerBase):
         if request is None:
             raise ValueError("DeleteVolumeRequest is None")
         log_request("DeleteVolume", request)
-
-        # Implement host garbage collection
 
         reply = csi_pb2.DeleteVolumeResponse()
         await stream.send_message(reply)
