@@ -339,6 +339,9 @@ class NodeServicer(csi_grpc.NodeBase):
         logger.debug(msg=f"Mounting {fakeRoot}/nix on {request.target_path}")
         Path(request.target_path).mkdir(parents=True, exist_ok=True)
         if request.readonly:
+            # For readonly we use a bind mount, the benefit is that different
+            # container stores using bindmounts will get the same inodes and
+            # share page cache with others, reducing host storage and memory usage.
             await helpers.run_subprocess(
                 "mount",
                 "--bind",
@@ -349,6 +352,9 @@ class NodeServicer(csi_grpc.NodeBase):
                 str(targetpath),
             )
         else:
+            # For readwrite we use an overlayfs mount, the benefit here is that
+            # it works as CoW even if the underlying filesystem doesn't support
+            # it, reducing host storage usage.
             parent = targetpath.parent
             workdir = parent.joinpath("workdir")
             upperdir = parent.joinpath("upperdir")
@@ -360,7 +366,7 @@ class NodeServicer(csi_grpc.NodeBase):
                 "overlay",
                 "overlay",
                 "-o",
-                f"lowerdir={sourcepath},upperdir={upperdir},workdir={workdir}",
+                f"rw,lowerdir={sourcepath},upperdir={upperdir},workdir={workdir}",
                 str(targetpath),
             )
 
