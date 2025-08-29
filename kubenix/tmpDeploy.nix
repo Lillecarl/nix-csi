@@ -64,6 +64,7 @@
                       paths = [
                         pkgs.hello
                         pkgs.lix
+                        pkgs.cacert
                       ];
                     }
                 '';
