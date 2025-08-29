@@ -33,7 +33,7 @@ def log_request(method_name: str, request: Any):
 
 # nix eval + nix build + cp + nix_init_db
 async def realize_store(
-    expr: str,
+    file: Path,
     root_name: str,
 ) -> None | Path:
     """Build and realize a Nix expression into a sub/fake store."""
@@ -44,8 +44,8 @@ async def realize_store(
         "--impure",
         "--no-link",
         "--print-out-paths",
-        "--expr",
-        expr,
+        "--file",
+        str(file),
     )
     if build_result.retcode != 0:
         raise Exception("Build failed")
