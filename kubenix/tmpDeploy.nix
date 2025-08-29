@@ -37,19 +37,30 @@
         experimental-features = nix-command flakes auto-allocate-uids
       '';
     };
-    kubernetes.resources.pods.ubuntu1 = {
+    kubernetes.resources.pods.testpod = {
       metadata = {
-        labels.run = "ubuntu";
+        namespace = config.cknixNamespace;
         annotations."cknix-expr" = "hello";
       };
       spec = {
-        containers.ubuntu = {
+        containers.this = {
           command = [
-            "sleep"
+            "/nix/var/result/bin/sleep"
             "infinity"
           ];
-          image = "ubuntu:22.04";
+          image = "gcr.io/distroless/static:latest";
+          env = [
+            {
+              name = "PATH";
+              value = "/nix/var/result/bin";
+            }
+          ];
           volumeMounts = [
+            {
+              name = "nix-config";
+              mountPath = "/etc/nix";
+              readOnly = true;
+            }
             {
               name = "cknix-volume";
               mountPath = "/nix";
@@ -60,21 +71,33 @@
         hostNetwork = true;
         volumes = [
           {
+            name = "nix-config";
+            configMap.name = "nix-config";
+          }
+          {
             name = "cknix-volume";
             csi = {
               driver = "cknix.csi.store";
               volumeAttributes.expr = # nix
                 ''
                   let
-                    cknix = (import /cknix/default.nix);
-                    pkgs = cknix.spkgs;
+                    pkgs = (import (builtins.fetchTree {
+                      type = "github";
+                      repo = "nixpkgs";
+                      owner = "NixOS";
+                      ref = "nixos-unstable";
+                    }) {});
                   in
                     pkgs.buildEnv {
                       name = "testEnv";
                       paths = [
-                        pkgs.hello
+                        pkgs.uutils-coreutils-noprefix
+                        pkgs.util-linux
+                        pkgs.lsd
+                        pkgs.fd
+                        pkgs.ripgrep
+                        pkgs.fish
                         pkgs.lix
-                        pkgs.cacert
                       ];
                     }
                 '';
