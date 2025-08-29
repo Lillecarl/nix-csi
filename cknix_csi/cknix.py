@@ -64,17 +64,18 @@ async def realize_store(
     path_info = await helpers.run_subprocess(
         "nix", "path-info", "--recursive", packagePath
     )
-    paths = path_info.stdout.strip().splitlines()
+    paths = set(path_info.stdout.strip().splitlines())
 
     # Create container store structure
     NIX_STATE_DIR.mkdir(parents=True, exist_ok=True)
     NIX_STORE_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Copy dependencies to substore
-    for srcPath in paths:
-        srcPath = Path(srcPath)
-        dstPath = NIX_STORE_DIR.joinpath(srcPath.name)
-        shutil.copytree(srcPath, dstPath, copy_function=os.link, dirs_exist_ok=True)
+    # Copy dependencies to substore, rsync saves a lot of implementation headache
+    # here. --archive keeps all attributes, --hard-links hardlinks everything
+    # it can while replicating symlinks exactly as they were.
+    await helpers.run_subprocess(
+        "rsync", "--archive", "--hard-links", *paths, str(NIX_STORE_DIR)
+    )
 
     # Copy package contents to result. This is a "well-know" path
     shutil.copytree(
