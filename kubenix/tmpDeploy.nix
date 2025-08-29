@@ -29,6 +29,14 @@
         volumeMode = "Filesystem";
       };
     };
+    kubernetes.resources.configMaps.nix-config = {
+      metadata.namespace = config.cknixNamespace;
+      data."nix.conf" = ''
+        build-users-group = root
+        auto-allocate-uids = true
+        experimental-features = nix-command flakes auto-allocate-uids
+      '';
+    };
     kubernetes.resources.pods.ubuntu1 = {
       metadata = {
         labels.run = "ubuntu";
