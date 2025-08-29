@@ -5,6 +5,7 @@ import socket
 import argparse
 import shutil
 import tempfile
+import hashlib
 
 from typing import Any
 from google.protobuf.wrappers_pb2 import BoolValue
@@ -26,33 +27,43 @@ KUBE_NODE_NAME = os.environ.get("KUBE_NODE_NAME")
 #     raise Exception("Please make sure KUBE_NODE_NAME is set")
 
 CKNIX_ROOT = Path("/nix/var/cknix")
+GCROOTS_PATH = Path("/nix/var/nix/gcroots/auto")
 
 
 def log_request(method_name: str, request: Any):
     logger.info("Received %s:\n%s", method_name, request)
 
 
+def md5(text: str):
+    return hashlib.md5(text.encode()).hexdigest()
+
 # nix eval + nix build + cp + nix_init_db
-async def realize_store(
-    file: Path,
-    root_name: str,
-) -> None | Path:
+async def realize_store(file: Path, root_name: str, out_link: bool) -> None | Path:
     """Build and realize a Nix expression into a sub/fake store."""
-    # Build the expression
-    build_result = await helpers.run_subprocess(
+
+    gcPath = GCROOTS_PATH.joinpath(root_name)
+
+    buildArgs = [
         "nix",
         "build",
         "--impure",
-        "--no-link",
         "--print-out-paths",
         "--file",
         str(file),
-    )
+    ]
+    if not out_link:
+        buildArgs.append("--no-link")
+    else:
+        buildArgs.append("--out-link")
+        buildArgs.append(str(gcPath))
+
+    # Build the expression
+    build_result = await helpers.run_subprocess(*buildArgs)
     if build_result.retcode != 0:
         raise Exception("Build failed")
 
     # Get the resulting storepath
-    packagePath = build_result.stdout.strip()
+    packagePath = Path(build_result.stdout.strip())
 
     fakeRoot = CKNIX_ROOT.joinpath(root_name)
     cknixPrefix = fakeRoot.joinpath("nix")
@@ -63,7 +74,7 @@ async def realize_store(
 
     # Get dependency paths
     path_info = await helpers.run_subprocess(
-        "nix", "path-info", "--recursive", packagePath
+        "nix", "path-info", "--recursive", str(packagePath)
     )
     paths = set(path_info.stdout.strip().splitlines())
 
@@ -74,18 +85,28 @@ async def realize_store(
     # Copy dependencies to substore, rsync saves a lot of implementation headache
     # here. --archive keeps all attributes, --hard-links hardlinks everything
     # it can while replicating symlinks exactly as they were.
-    await helpers.run_subprocess(
+    rsync = await helpers.run_subprocess(
         "rsync", "--archive", "--hard-links", *paths, str(NIX_STORE_DIR)
     )
 
     # Link root derivation to /nix/var/result in the container. This is a "well-know" path
-    await helpers.run_subprocess(
+    ln = await helpers.run_subprocess(
         "ln", "--symbolic", str(packagePath), str(packageResultPath)
     )
 
     # Create Nix database
     # This is an execline script that runs nix-store --dump-db | NIX_STATE_DIR=something nix-store --load-db
-    await helpers.run_subprocess("nix_init_db", str(NIX_STATE_DIR), *paths)
+    nix_init_db = await helpers.run_subprocess(
+        "nix_init_db", str(NIX_STATE_DIR), *paths
+    )
+
+    if rsync.retcode != 0 or ln.retcode != 0 or nix_init_db.retcode != 0:
+        if out_link:
+            # Remove gcroots if we failed something else
+            gcPath.unlink(missing_ok=True)
+            # Remove what we were working on
+            shutil.rmtree(fakeRoot, True)
+        raise Exception("Linking or database initialization failed")
 
     return fakeRoot
 
@@ -252,43 +273,18 @@ class NodeServicer(csi_grpc.NodeBase):
             raise ValueError("NodePublishVolumeRequest is None")
         log_request("NodePublishVolume", request)
 
-        expr = None
-        podUid = None
-        for k, v in request.volume_context.items():
-            match k:
-                case "expr":
-                    expr = v
-                case "csi.storage.k8s.io/pod.uid":
-                    podUid = v
+        expr = request.volume_context.get("expr")
 
         if expr is None:
             raise Exception("Couldn't find expression")
-        if podUid is None:
-            raise Exception("Couldn't find podUid")
+
+        pathMd5 = md5(request.target_path)
+        gcPath = GCROOTS_PATH.joinpath(pathMd5)
 
         expressionFile = Path(tempfile.mktemp(suffix=".nix"))
         expressionFile.write_text(expr)
 
-        logger.debug(
-            msg=f"Evaluating Nix expression: {expr}, volume_id: {request.volume_id}"
-        )
-
-        evalRes = await helpers.run_subprocess(
-            "nix", "eval", "--impure", "--raw", "--file", expressionFile
-        )
-
-        if evalRes.retcode != 0:
-            error = f"""
-                Failed to evaluate expression:
-                {expr}
-            """
-            logger.error(msg=error)
-            raise GRPCError(
-                Status.INTERNAL,
-                error,
-            )
-
-        fakeRoot = await realize_store(expressionFile, podUid)
+        fakeRoot = await realize_store(expressionFile, pathMd5, True)
         if fakeRoot is None:
             error = "Unable to build fakeStore"
             logger.error(msg=error)
@@ -297,14 +293,13 @@ class NodeServicer(csi_grpc.NodeBase):
                 error,
             )
 
-        expressionFile.unlink()
+        expressionFile.unlink(missing_ok=True)
 
         sourcePath = fakeRoot.joinpath("nix")
         targetPath = Path(request.target_path)
 
         logger.debug(msg=f"Mounting {fakeRoot}/nix on {request.target_path}")
         Path(request.target_path).mkdir(parents=True, exist_ok=True)
-        sourcePath.joinpath("poduid").write_text(podUid)
         if request.readonly:
             # For readonly we use a bind mount, the benefit is that different
             # container stores using bindmounts will get the same inodes and
@@ -337,6 +332,16 @@ class NodeServicer(csi_grpc.NodeBase):
                 str(targetPath),
             )
 
+        # Relink cknix gcroots to a Path that's removed with the pod
+        await helpers.run_subprocess(
+            "ln",
+            "--symbolic",
+            "--force",
+            "--no-dereference",
+            str(Path(request.target_path).joinpath("var/result")),
+            str(gcPath),
+        )
+
         reply = csi_pb2.NodePublishVolumeResponse()
         await stream.send_message(reply)
 
@@ -348,13 +353,10 @@ class NodeServicer(csi_grpc.NodeBase):
 
         logger.debug(msg=f"Unmounting {request.target_path}")
         try:
-            targetPath = Path(request.target_path)
-            uidPath = targetPath.joinpath("poduid")
-            podUid = uidPath.read_text()
-            gcPath = CKNIX_ROOT.joinpath(podUid)
-            shutil.rmtree(gcPath)
+            pathMd5 = md5(request.target_path)
+            GCROOTS_PATH.joinpath(pathMd5).unlink()
+            shutil.rmtree(CKNIX_ROOT.joinpath(pathMd5), True)
         except Exception as ex:
-            logger.error("Unable to get poduid for GC")
             logger.error(ex)
         await helpers.run_subprocess("umount", "--verbose", request.target_path)
 
