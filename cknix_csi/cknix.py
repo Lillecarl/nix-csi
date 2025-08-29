@@ -297,11 +297,12 @@ class NodeServicer(csi_grpc.NodeBase):
                 error,
             )
 
-        sourcepath = Path(f"{fakeRoot}/nix")
-        targetpath = Path(request.target_path)
+        sourcePath = fakeRoot.joinpath("nix")
+        targetPath = Path(request.target_path)
 
         logger.debug(msg=f"Mounting {fakeRoot}/nix on {request.target_path}")
         Path(request.target_path).mkdir(parents=True, exist_ok=True)
+        sourcePath.joinpath("poduid").write_text(podUid)
         if request.readonly:
             # For readonly we use a bind mount, the benefit is that different
             # container stores using bindmounts will get the same inodes and
@@ -312,14 +313,14 @@ class NodeServicer(csi_grpc.NodeBase):
                 "--verbose",
                 "-o",
                 "ro",
-                str(sourcepath),
-                str(targetpath),
+                str(sourcePath),
+                str(targetPath),
             )
         else:
             # For readwrite we use an overlayfs mount, the benefit here is that
             # it works as CoW even if the underlying filesystem doesn't support
             # it, reducing host storage usage.
-            parent = targetpath.parent
+            parent = targetPath.parent
             workdir = parent.joinpath("workdir")
             upperdir = parent.joinpath("upperdir")
             workdir.mkdir(parents=True, exist_ok=True)
@@ -330,8 +331,8 @@ class NodeServicer(csi_grpc.NodeBase):
                 "overlay",
                 "overlay",
                 "-o",
-                f"rw,lowerdir={sourcepath},upperdir={upperdir},workdir={workdir}",
-                str(targetpath),
+                f"rw,lowerdir={sourcePath},upperdir={upperdir},workdir={workdir}",
+                str(targetPath),
             )
 
         reply = csi_pb2.NodePublishVolumeResponse()
@@ -344,6 +345,15 @@ class NodeServicer(csi_grpc.NodeBase):
         log_request("NodeUnpublishVolume", request)
 
         logger.debug(msg=f"Unmounting {request.target_path}")
+        try:
+            targetPath = Path(request.target_path)
+            uidPath = targetPath.joinpath("poduid")
+            podUid = uidPath.read_text()
+            gcPath = CKNIX_ROOT.joinpath(podUid)
+            shutil.rmtree(gcPath)
+        except Exception as ex:
+            print("Unable to get poduid for GC")
+            print(ex)
         await helpers.run_subprocess("umount", "--verbose", request.target_path)
 
         reply = csi_pb2.NodeUnpublishVolumeResponse()
