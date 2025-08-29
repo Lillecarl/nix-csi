@@ -1,4 +1,4 @@
-{ lib, ... }:
+{ lib, config, ... }:
 {
   config = {
     kubernetes.customResourceAttrs = {
@@ -7,6 +7,7 @@
         kind = "Expression";
         metadata = {
           name = "hello";
+          namespace = config.cknixNamespace;
         };
         data = {
           expr = "(import /cknix/default.nix).legacyPackages.x86_64-linux.hello";
@@ -14,6 +15,7 @@
       };
     };
     kubernetes.resources.persistentVolumes.cknixtest = lib.mkIf false {
+      metadata.namespace = config.cknixNamespace;
       spec = {
         accessModes = [ "ReadWriteMany" ];
         capacity.storage = "1M";

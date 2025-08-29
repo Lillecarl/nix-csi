@@ -1,8 +1,8 @@
-{ ... }:
+{ config, ... }:
 {
   config = {
     kubernetes.api.resources.daemonSets."cknix-csi-node" = {
-      metadata.namespace = "default";
+      metadata.namespace = config.cknixNamespace;
       spec = {
         selector.matchLabels.app = "cknix-csi-node";
         template = {

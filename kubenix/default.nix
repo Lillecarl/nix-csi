@@ -5,6 +5,7 @@
 {
   imports = [
     kubenix.modules.k8s
+    ./options.nix
     ./namespace.nix
     ./daemonset.nix
     ./crd.nix

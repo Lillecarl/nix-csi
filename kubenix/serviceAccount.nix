@@ -1,8 +1,8 @@
-{ ... }:
+{ config, ... }:
 {
   config = {
     kubernetes.api.resources.serviceAccounts.cknix = {
-      metadata.namespace = "default";
+      metadata.namespace = config.cknixNamespace;
     };
   };
 }
