@@ -45,14 +45,20 @@
       spec = {
         containers.this = {
           command = [
-            "/nix/var/result/bin/sleep"
-            "infinity"
+            "/nix/var/result/bin/tini"
+            "/nix/var/result/bin/init"
           ];
-          image = "gcr.io/distroless/static:latest";
+          # image = "gcr.io/distroless/static:latest";
+          image = "dramforever/scratch:latest";
+          # securityContext.privileged = true;
           env = [
             {
               name = "PATH";
               value = "/nix/var/result/bin";
+            }
+            {
+              name = "container";
+              value = "1";
             }
           ];
           volumeMounts = [
@@ -78,29 +84,7 @@
             name = "cknix-volume";
             csi = {
               driver = "cknix.csi.store";
-              volumeAttributes.expr = # nix
-                ''
-                  let
-                    pkgs = (import (builtins.fetchTree {
-                      type = "github";
-                      repo = "nixpkgs";
-                      owner = "NixOS";
-                      ref = "nixos-unstable";
-                    }) {});
-                  in
-                    pkgs.buildEnv {
-                      name = "testEnv";
-                      paths = [
-                        pkgs.uutils-coreutils-noprefix
-                        pkgs.util-linux
-                        pkgs.lsd
-                        pkgs.fd
-                        pkgs.ripgrep
-                        pkgs.fish
-                        pkgs.lix
-                      ];
-                    }
-                '';
+              volumeAttributes.expr = builtins.readFile ../containerMount.nix;
             };
           }
         ];
