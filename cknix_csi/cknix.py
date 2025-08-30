@@ -27,7 +27,8 @@ KUBE_NODE_NAME = os.environ.get("KUBE_NODE_NAME")
 #     raise Exception("Please make sure KUBE_NODE_NAME is set")
 
 CKNIX_ROOT = Path("/nix/var/cknix")
-GCROOTS_PATH = Path("/nix/var/nix/gcroots/auto")
+CKNIX_GCROOTS = Path("/nix/var/nix/gcroots/cknix")
+CKNIX_GCROOTS.mkdir(parents=True, exist_ok=True)
 
 
 def log_request(method_name: str, request: Any):
@@ -37,11 +38,12 @@ def log_request(method_name: str, request: Any):
 def md5(text: str):
     return hashlib.md5(text.encode()).hexdigest()
 
+
 # nix eval + nix build + cp + nix_init_db
 async def realize_store(file: Path, root_name: str, out_link: bool) -> None | Path:
     """Build and realize a Nix expression into a sub/fake store."""
 
-    gcPath = GCROOTS_PATH.joinpath(root_name)
+    gcPath = CKNIX_GCROOTS.joinpath(root_name)
 
     buildArgs = [
         "nix",
@@ -279,7 +281,7 @@ class NodeServicer(csi_grpc.NodeBase):
             raise Exception("Couldn't find expression")
 
         pathMd5 = md5(request.target_path)
-        gcPath = GCROOTS_PATH.joinpath(pathMd5)
+        gcPath = CKNIX_GCROOTS.joinpath(pathMd5)
 
         expressionFile = Path(tempfile.mktemp(suffix=".nix"))
         expressionFile.write_text(expr)
@@ -354,7 +356,7 @@ class NodeServicer(csi_grpc.NodeBase):
         logger.debug(msg=f"Unmounting {request.target_path}")
         try:
             pathMd5 = md5(request.target_path)
-            GCROOTS_PATH.joinpath(pathMd5).unlink()
+            CKNIX_GCROOTS.joinpath(pathMd5).unlink()
             shutil.rmtree(CKNIX_ROOT.joinpath(pathMd5), True)
         except Exception as ex:
             logger.error(ex)
