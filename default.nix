@@ -1,7 +1,8 @@
 let
-  npins = import ./npins;
-  flake-compat = import npins.flake-compat;
-  # flake-compat = import /home/lillecarl/Code/flake-compat;
+  flake-compat = import (builtins.fetchTree {
+    type = "git";
+    url = "https://git.lix.systems/lix-project/flake-compat.git";
+  });
   flake = flake-compat {
     src = (builtins.toString ./.);
     copySourceTreeToStore = false;
@@ -9,6 +10,6 @@ let
   system = builtins.currentSystem;
 in
 flake.outputs // {
-  spkgs = flake.outputs.legacyPackages.${system};
-  spackages = flake.outputs.packages.${system};
+  pkgs = flake.outputs.legacyPackages.${system};
+  packages = flake.outputs.packages.${system};
 }
