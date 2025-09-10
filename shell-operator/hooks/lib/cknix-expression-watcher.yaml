@@ -1,7 +1,0 @@
-configVersion: v1
-kubernetes:
-  - name: "cknix-expression-changes"
-    kind: Expression
-    apiVersion: cknix.cool/v1
-    executeHookOnEvent: ["Added", "Modified", "Deleted"]
-    jqFilter: ".spec.data.expr"
