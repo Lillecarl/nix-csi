@@ -4,7 +4,6 @@
     flake-utils.url = "github:numtide/flake-utils";
     nix2container = {
       url = "github:nlewo/nix2container";
-      # url = "path:/home/lillecarl/Code/nix2container";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     kubenix = {
@@ -23,23 +22,8 @@
         };
         lib = pkgs.lib;
 
-        kopf = pkgs.python3Packages.kopf.overrideAttrs (prev: {
-          propagatedBuildInputs = (prev.propagatedBuildInputs or [ ]) ++ [ certbuilder ];
-          doCheck = false;
-          doInstallCheck = false;
-        });
+        kopf = pkgs.python3Packages.callPackage ./nix/pkgs/kopf.nix { inherit certbuilder; };
         certbuilder = pkgs.python3Packages.callPackage ./nix/pkgs/certbuilder.nix { };
-        aiofile = pkgs.python3Packages.aiofile.overrideAttrs (pattrs: rec {
-          version = "3.8.8";
-          src = pkgs.fetchPypi {
-            pname = "aiofile";
-            version = version;
-            hash = "sha256-QfPcQL1zBFnVhhBHboLl77L4Subp+giKlUU4XYOLikM=";
-          };
-          doCheck = false;
-          doInstallCheck = false;
-        });
-        aiopath = pkgs.python3Packages.callPackage ./nix/pkgs/aiopath.nix { inherit aiofile; };
         csi-proto-python = pkgs.python3Packages.callPackage ./nix/pkgs/csi-proto-python/default.nix { };
         asyncache = pkgs.python3Packages.callPackage ./nix/pkgs/asyncache.nix { };
         python-jsonpath = pkgs.python3Packages.callPackage ./nix/pkgs/python-jsonpath.nix { };
@@ -56,19 +40,6 @@
             ''
               #! ${lib.getExe' pkgs.execline "execlineb"}
               foreground { echo "Initializing..."}
-            '';
-
-        # execline script that takes NIX_STATE_DIR as first arg and storepaths
-        # as consecutive args. Dumps nix database and imports it into NIX_STATE_DIR
-        nix_init_db =
-          pkgs.writeScriptBin "nix_init_db" # execline
-            ''
-              #! ${lib.getExe' pkgs.execline "execlineb"} -s1
-              emptyenv -p
-              pipeline { nix-store --dump-db $@ }
-              export USER nobody
-              export NIX_STATE_DIR $1
-              exec nix-store --load-db
             '';
 
         nix2containerImage = nix2containerLib.buildImage {
@@ -127,7 +98,7 @@
           ];
         };
         cknix-csi = pkgs.python3Packages.callPackage ./nix/pkgs/cknix-csi.nix {
-          inherit csi-proto-python nix_init_db;
+          inherit csi-proto-python;
         };
         shell-operator = pkgs.callPackage ./nix/pkgs/shell-operator.nix { };
 
@@ -172,7 +143,6 @@
               ourPython
               pkgs.skopeo
               pkgs.uv
-              nix_init_db
             ];
           };
 

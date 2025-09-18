@@ -1,17 +1,30 @@
 {
   buildPythonApplication,
   setuptools-scm,
-  csi-proto-python,
-  kubectl,
-  util-linux,
-  sh,
-  uutils-coreutils-noprefix,
-  nix_init_db,
-  rsync,
+  csi-proto-python, # CSI GRPC bindings
+  util-linux, # mount, umount
+  uutils-coreutils-noprefix, # ln
+  rsync, # hardlinking
+  execline, # easier "shell" operations than python subprocess API
+  writeScriptBin, # create shebanged scripts
+  lib, # getExe/getExe'
 }:
 let
   pname = "cknix-csi";
   version = "0.1.0";
+
+  # execline script that takes NIX_STATE_DIR as first arg and storepaths
+  # as consecutive args. Dumps nix database and imports it into NIX_STATE_DIR database
+  nix_init_db =
+    writeScriptBin "nix_init_db" # execline
+      ''
+        #! ${lib.getExe' execline "execlineb"} -s1
+        emptyenv -p
+        pipeline { nix-store --dump-db $@ }
+        export USER nobody
+        export NIX_STATE_DIR $1
+        exec nix-store --load-db
+      '';
 in
 buildPythonApplication {
   inherit pname version;
@@ -22,9 +35,10 @@ buildPythonApplication {
     rsync
     uutils-coreutils-noprefix
     nix_init_db
-    sh
     csi-proto-python
-    kubectl
     util-linux
   ];
+  passthru = {
+    inherit nix_init_db;
+  };
 }
