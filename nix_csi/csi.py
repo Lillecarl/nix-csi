@@ -17,18 +17,18 @@ from pathlib import Path
 
 from . import helpers
 
-logger = logging.getLogger("cknix-csi")
+logger = logging.getLogger("nix-csi")
 
-CSI_PLUGIN_NAME = "cknix.csi.store"
+CSI_PLUGIN_NAME = "nix.csi.store"
 CSI_VENDOR_VERSION = "0.1.0"
 
 KUBE_NODE_NAME = os.environ.get("KUBE_NODE_NAME")
-# if KUBE_NODE_NAME is None:
-#     raise Exception("Please make sure KUBE_NODE_NAME is set")
+if KUBE_NODE_NAME is None:
+    raise Exception("Please make sure KUBE_NODE_NAME is set")
 
-CKNIX_ROOT = Path("/nix/var/cknix")
-CKNIX_GCROOTS = Path("/nix/var/nix/gcroots/cknix")
-CKNIX_GCROOTS.mkdir(parents=True, exist_ok=True)
+NIX_ROOT = Path("/nix/var/nix-csi")
+NIX_GCROOTS = Path("/nix/var/nix/gcroots/nix-csi")
+NIX_GCROOTS.mkdir(parents=True, exist_ok=True)
 
 
 def log_request(method_name: str, request: Any):
@@ -43,7 +43,7 @@ def md5(text: str):
 async def realize_store(file: Path, root_name: str, out_link: bool) -> None | Path:
     """Build and realize a Nix expression into a sub/fake store."""
 
-    gcPath = CKNIX_GCROOTS.joinpath(root_name)
+    gcPath = NIX_GCROOTS.joinpath(root_name)
 
     buildArgs = [
         "nix",
@@ -67,12 +67,12 @@ async def realize_store(file: Path, root_name: str, out_link: bool) -> None | Pa
     # Get the resulting storepath
     packagePath = Path(build_result.stdout.strip())
 
-    fakeRoot = CKNIX_ROOT.joinpath(root_name)
-    cknixPrefix = fakeRoot.joinpath("nix")
-    packageResultPath = cknixPrefix.joinpath("var/result")
+    fakeRoot = NIX_ROOT.joinpath(root_name)
+    nixCsiPrefix = fakeRoot.joinpath("nix")
+    packageResultPath = nixCsiPrefix.joinpath("var/result")
     # Capitalized to emphasise they're Nix environment variables
-    NIX_STATE_DIR = cknixPrefix.joinpath("var/nix")
-    NIX_STORE_DIR = cknixPrefix.joinpath("store")
+    NIX_STATE_DIR = nixCsiPrefix.joinpath("var/nix")
+    NIX_STORE_DIR = nixCsiPrefix.joinpath("store")
 
     # Get dependency paths
     path_info = await helpers.run_subprocess(
@@ -281,7 +281,7 @@ class NodeServicer(csi_grpc.NodeBase):
             raise Exception("Couldn't find expression")
 
         pathMd5 = md5(request.target_path)
-        gcPath = CKNIX_GCROOTS.joinpath(pathMd5)
+        gcPath = NIX_GCROOTS.joinpath(pathMd5)
 
         expressionFile = Path(tempfile.mktemp(suffix=".nix"))
         expressionFile.write_text(expr)
@@ -334,7 +334,7 @@ class NodeServicer(csi_grpc.NodeBase):
                 str(targetPath),
             )
 
-        # Relink cknix gcroots to a Path that's removed with the pod
+        # Relink nix-csi gcroots to a Path that's removed with the pod
         await helpers.run_subprocess(
             "ln",
             "--symbolic",
@@ -356,8 +356,8 @@ class NodeServicer(csi_grpc.NodeBase):
         logger.debug(msg=f"Unmounting {request.target_path}")
         try:
             pathMd5 = md5(request.target_path)
-            CKNIX_GCROOTS.joinpath(pathMd5).unlink()
-            shutil.rmtree(CKNIX_ROOT.joinpath(pathMd5), True)
+            NIX_GCROOTS.joinpath(pathMd5).unlink()
+            shutil.rmtree(NIX_ROOT.joinpath(pathMd5), True)
         except Exception as ex:
             logger.error(ex)
         await helpers.run_subprocess("umount", "--verbose", request.target_path)

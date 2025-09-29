@@ -1,6 +1,24 @@
-{ config, ... }:
+{ config, lib, ... }:
 {
+  options = {
+    nix-csi.image = lib.mkOption {
+      type = lib.types.str;
+      default = "nix-csi:latest";
+    };
+  };
   config = {
+    kubernetes.resources.configMaps.nixos-unstable = {
+      metadata.namespace = config.cknixNamespace;
+      data."default.nix" = # nix
+        ''
+          import (builtins.fetchTree {
+            type = "github";
+            repo = "nixpkgs";
+            owner = "NixOS";
+            ref = "nixos-unstable";
+          }).outPath
+        '';
+    };
     kubernetes.api.resources.daemonSets."cknix-csi-node" = {
       metadata.namespace = config.cknixNamespace;
       spec = {
@@ -14,6 +32,10 @@
               {
                 name = "init";
                 command = [
+                  # "rsync"
+                  # "--archive"
+                  # "/nix"
+                  # "/nix2"
                   "fish"
                   "-c"
                   "echo asdf && sleep 5 && cp --verbose --archive --update=none /nix/* /nix2/"
@@ -46,6 +68,10 @@
                     name = "KUBE_NODE_NAME";
                     valueFrom.fieldRef.fieldPath = "spec.nodeName";
                   }
+                  {
+                    name = "NIX_PATH";
+                    value = "nixos-unstable=/etc/nixpaths/nixos-unstable";
+                  }
                 ];
                 volumeMounts = [
                   {
@@ -60,11 +86,17 @@
                   {
                     name = "cknix-store";
                     mountPath = "/nix";
-                    mountPropagation = "HostToContainer";
+                    # mountPropagation = "HostToContainer";
+                    mountPropagation = "Bidirectional";
                   }
                   {
                     name = "registration-dir";
                     mountPath = "/registration";
+                  }
+                  {
+                    name = "nixos-unstable";
+                    mountPath = "/etc/nixpaths/nixos-unstable";
+                    readOnly = true;
                   }
                   {
                     name = "cknixdev";
@@ -145,6 +177,10 @@
               {
                 name = "registration-dir";
                 hostPath.path = "/var/lib/kubelet/plugins_registry";
+              }
+              {
+                name = "nixos-unstable";
+                configMap.name = "nixos-unstable";
               }
               {
                 name = "cknixdev";

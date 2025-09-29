@@ -6,9 +6,6 @@ import json
 
 logger = logging.getLogger("helpers")
 
-CRDNAME = "expressions.cknix.cool"
-
-
 class ProcRet:
     def __init__(self, retcode: int, stdout: str, stderr: str, cmd: str):
         self.retcode = retcode

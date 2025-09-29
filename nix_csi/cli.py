@@ -1,10 +1,10 @@
 import asyncio
 import logging
 import argparse
-from . import cknix
+from . import csi
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="cknix CSI Driver")
+    parser = argparse.ArgumentParser(description="nix CSI driver")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
         "--controller", action="store_true", help="Run in controller mode"
@@ -25,7 +25,7 @@ async def main_async():
         level=getattr(logging, args.loglevel),
         format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
     )
-    logger = logging.getLogger("cknix-csi")
+    logger = logging.getLogger("nix-csi")
     loglevel_str = logging.getLevelName(logger.getEffectiveLevel())
     logger.info(f"Current log level: {loglevel_str}")
 
@@ -33,7 +33,7 @@ async def main_async():
     hpacklogger = logging.getLogger("hpack.hpack")
     hpacklogger.setLevel(logging.INFO)
 
-    await cknix.serve(args)
+    await csi.serve(args)
 
 
 def main():

@@ -1,15 +1,98 @@
+{
+  pkgs ? import <nixpkgs> { },
+}:
 let
-  flake-compat = import (builtins.fetchTree {
+  lib = pkgs.lib;
+
+  # kubenix is only published as a flake :(
+  # flake-compatish = import (
+  #   builtins.fetchGit {
+  #     url = "https://github.com/lillecarl/flake-compatish.git";
+  #     ref = "main";
+  #   }
+  # );
+  flake-compatish = "/home/lillecarl/Code/flake-compat";
+  flake = flake-compatish (toString ./.);
+
+  dinixSrc = builtins.fetchTree {
     type = "git";
-    url = "https://git.lix.systems/lix-project/flake-compat.git";
-  });
-  flake = flake-compat {
-    src = (builtins.toString ./.);
-    copySourceTreeToStore = false;
+    url = "https://github.com/Lillecarl/dinix.git";
   };
-  system = builtins.currentSystem;
+  n2cSrc = builtins.fetchTree {
+    type = "git";
+    url = "https://github.com/nlewo/nix2container.git";
+  };
 in
-flake.outputs // {
-  pkgs = flake.outputs.legacyPackages.${system};
-  packages = flake.outputs.packages.${system};
+rec {
+  n2c = import n2cSrc {
+    inherit pkgs;
+    system = builtins.currentSystem;
+  };
+  csi-proto-python = pkgs.python3Packages.callPackage ./nix/pkgs/csi-proto-python/default.nix { };
+  nix-csi = pkgs.python3Packages.callPackage ./nix/pkgs/nix-csi.nix {
+    inherit csi-proto-python;
+  };
+  dinixEval = (
+    import dinixSrc {
+      inherit pkgs;
+      modules = [
+        {
+          config = {
+            services.boot.depends-on-d = [ "nix-csi" ];
+            services.nix-csi = {
+              command = lib.getExe nix-csi;
+            };
+          };
+        }
+      ];
+    }
+  );
+
+  # kubenix evaluation
+  kubenixEval = flake.inputs.kubenix.evalModules.${builtins.currentSystem} {
+    module = _: {
+      imports = [
+        ./kubenix
+        {
+          config.nix-csi.image = containerImage.imageRefUnsafe;
+        }
+      ];
+    };
+  };
+  manifestYAML = kubenixEval.config.kubernetes.resultYAML;
+  manifestJSON = kubenixEval.config.kubernetes.result;
+
+  # script to build container image
+  containerImage = pkgs.callPackage ./nix/pkgs/containerimage.nix {
+    inherit dinixEval;
+    inherit (n2c.nix2container) buildImage;
+  };
+
+  copyToContainerd = pkgs.writeScriptBin "copyToContainerd" # fish
+  ''
+    #! ${lib.getExe pkgs.fish}
+    set archivedir $(mktemp -d)
+    set --export CONTAINERD_ADDRESS /run/containerd/containerd.sock
+    ${lib.getExe n2c.skopeo-nix2container} --insecure-policy copy nix:${containerImage} oci-archive:$archivedir/archive.tar:${containerImage.imageRefUnsafe}
+    sudo -E ${lib.getExe' pkgs.containerd "ctr"} --namespace k8s.io images import $archivedir/archive.tar
+    rm -r $archivedir
+  '';
+
+  # simpler than devshell
+  python = pkgs.python3.withPackages (
+    pypkgs: with pypkgs; [
+      nix-csi
+      csi-proto-python
+      grpclib
+      sh
+    ]
+  );
+  # env to add to PATH with direnv
+  repoenv = pkgs.buildEnv {
+    name = "repoenv";
+    paths = [
+      python
+      n2c.skopeo-nix2container
+    ];
+  };
 }

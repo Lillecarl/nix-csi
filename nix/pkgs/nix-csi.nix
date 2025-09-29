@@ -10,7 +10,7 @@
   lib, # getExe/getExe'
 }:
 let
-  pname = "cknix-csi";
+  pname = "nix-csi";
   version = "0.1.0";
 
   # execline script that takes NIX_STATE_DIR as first arg and storepaths
@@ -38,6 +38,7 @@ buildPythonApplication {
     csi-proto-python
     util-linux
   ];
+  meta.mainProgram = "nix-csi";
   passthru = {
     inherit nix_init_db;
   };
