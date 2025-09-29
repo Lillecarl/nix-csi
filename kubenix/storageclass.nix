@@ -1,8 +1,8 @@
 { ... }:
 {
   config = {
-    kubernetes.api.resources.storageClasses."cknix-csi" = {
-      provisioner = "cknix.csi.store";
+    kubernetes.api.resources.storageClasses."nix-csi" = {
+      provisioner = "nix.csi.store";
       reclaimPolicy = "Delete";
       volumeBindingMode = "WaitForFirstConsumer";
       allowVolumeExpansion = false;

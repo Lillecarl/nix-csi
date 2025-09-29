@@ -1,7 +1,7 @@
 { ... }:
 {
   config = {
-    kubernetes.api.resources.cSIDrivers."cknix.csi.store" = {
+    kubernetes.api.resources.cSIDrivers."nix.csi.store" = {
       spec = {
         attachRequired = false;
         podInfoOnMount = true;

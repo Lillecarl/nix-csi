@@ -1,8 +1,8 @@
 { config, ... }:
 {
   config = {
-    kubernetes.api.resources.serviceAccounts.cknix = {
-      metadata.namespace = config.cknixNamespace;
+    kubernetes.api.resources.serviceAccounts.nix-csi = {
+      metadata.namespace = config.namespace;
     };
   };
 }

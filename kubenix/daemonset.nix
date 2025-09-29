@@ -1,14 +1,8 @@
 { config, lib, ... }:
 {
-  options = {
-    nix-csi.image = lib.mkOption {
-      type = lib.types.str;
-      default = "nix-csi:latest";
-    };
-  };
   config = {
     kubernetes.resources.configMaps.nixos-unstable = {
-      metadata.namespace = config.cknixNamespace;
+      metadata.namespace = config.namespace;
       data."default.nix" = # nix
         ''
           import (builtins.fetchTree {
@@ -19,41 +13,39 @@
           }).outPath
         '';
     };
-    kubernetes.api.resources.daemonSets."cknix-csi-node" = {
-      metadata.namespace = config.cknixNamespace;
+    kubernetes.api.resources.daemonSets."nix-csi-node" = {
+      metadata.namespace = config.namespace;
       spec = {
-        selector.matchLabels.app = "cknix-csi-node";
+        selector.matchLabels.app = "nix-csi-node";
         template = {
-          metadata.labels.app = "cknix-csi-node";
+          metadata.labels.app = "nix-csi-node";
           spec = {
-            serviceAccountName = "cknix";
+            serviceAccountName = "nix-csi";
             hostNetwork = true;
             initContainers = [
               {
                 name = "init";
                 command = [
-                  # "rsync"
-                  # "--archive"
-                  # "/nix"
-                  # "/nix2"
-                  "fish"
-                  "-c"
-                  "echo asdf && sleep 5 && cp --verbose --archive --update=none /nix/* /nix2/"
+                  "rsync"
+                  "--verbose"
+                  "--archive"
+                  "/nix/."
+                  "/nix2/"
                 ];
-                image = "rg.nl-ams.scw.cloud/lillecarl/knix:latest";
+                image = config.image;
                 volumeMounts = [
                   {
                     mountPath = "/nix2";
-                    name = "cknix-store";
+                    name = "nix-store";
                   }
                 ];
-                imagePullPolicy = "Always";
+                imagePullPolicy = "IfNotPresent";
               }
             ];
             containers = [
               {
-                name = "cknix-csi-node";
-                image = "rg.nl-ams.scw.cloud/lillecarl/knix:latest";
+                name = "nix-csi-node";
+                image = config.image;
                 command = [
                   "sleep"
                   "infinity"
@@ -84,7 +76,7 @@
                     mountPropagation = "Bidirectional";
                   }
                   {
-                    name = "cknix-store";
+                    name = "nix-store";
                     mountPath = "/nix";
                     # mountPropagation = "HostToContainer";
                     mountPropagation = "Bidirectional";
@@ -99,18 +91,18 @@
                     readOnly = true;
                   }
                   {
-                    name = "cknixdev";
-                    mountPath = "/cknix";
+                    name = "nixdev";
+                    mountPath = "/nixdev";
                   }
                 ];
               }
               {
-                name = "cknix-csi-registrar";
+                name = "nix-csi-registrar";
                 image = "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.10.0";
                 args = [
                   "--v=5"
                   "--csi-address=/csi/csi.sock"
-                  "--kubelet-registration-path=/var/lib/kubelet/plugins/cknix.csi.nixstore/csi.sock"
+                  "--kubelet-registration-path=/var/lib/kubelet/plugins/nix.csi.store/csi.sock"
                 ];
                 env = [
                   {
@@ -134,7 +126,7 @@
                 ];
               }
               {
-                name = "cknix-csi-liveness";
+                name = "nix-csi-liveness";
                 image = "registry.k8s.io/sig-storage/livenessprobe:v2.12.0";
                 args = [
                   "--csi-address=/csi/csi.sock"
@@ -154,7 +146,7 @@
             ];
             volumes = [
               {
-                name = "cknix-store";
+                name = "nix-store";
                 hostPath = {
                   path = config.hostMountPath;
                   type = "DirectoryOrCreate";
@@ -163,7 +155,7 @@
               {
                 name = "socket-dir";
                 hostPath = {
-                  path = "/var/lib/kubelet/plugins/cknix.csi.nixstore/";
+                  path = "/var/lib/kubelet/plugins/nix.csi.store/";
                   type = "DirectoryOrCreate";
                 };
               }
@@ -183,9 +175,9 @@
                 configMap.name = "nixos-unstable";
               }
               {
-                name = "cknixdev";
+                name = "nixdev";
                 hostPath = {
-                  path = "/home/lillecarl/Code/cknix";
+                  path = "/home/lillecarl/Code/nix-csi";
                   type = "Directory";
                 };
               }

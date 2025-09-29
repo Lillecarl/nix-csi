@@ -10,7 +10,6 @@
   lix,
 
   uutils-coreutils-noprefix,
-  coreutils,
   util-linux,
   fish,
 }:
@@ -45,18 +44,17 @@ let
     initCopy
     dinixEval.config.dinitLauncher
     dinixEval.config.package
+    rsync
     util-linux
     lix
     folders
     fish
     uutils-coreutils-noprefix
-    # coreutils
     dockerTools.caCertificates
   ];
 in
 buildImage {
   name = "nix-csi";
-  # tag = "latest";
   copyToRoot = rootEnv;
   config = {
     Env = [

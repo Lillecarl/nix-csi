@@ -1,18 +1,28 @@
 {
-  pkgs ? import <nixpkgs> { },
+  pkgs ?
+    let
+      ft = import (builtins.fetchTree {
+        type = "github";
+        repo = "nixpkgs";
+        owner = "NixOS";
+        ref = "nixos-unstable";
+      }) { };
+      np = import <nixpkgs> { };
+      npt = builtins.tryEval np;
+    in
+    if npt.success then npt.value else ft,
 }:
 let
   lib = pkgs.lib;
 
   # kubenix is only published as a flake :(
-  # flake-compatish = import (
-  #   builtins.fetchGit {
-  #     url = "https://github.com/lillecarl/flake-compatish.git";
-  #     ref = "main";
-  #   }
-  # );
-  flake-compatish = "/home/lillecarl/Code/flake-compat";
-  flake = flake-compatish (toString ./.);
+  flake-compatish = import (
+    builtins.fetchGit {
+      url = "https://github.com/lillecarl/flake-compatish.git";
+      ref = "main";
+    }
+  );
+  flake = flake-compatish ./.;
 
   dinixSrc = builtins.fetchTree {
     type = "git";
@@ -54,7 +64,7 @@ rec {
       imports = [
         ./kubenix
         {
-          config.nix-csi.image = containerImage.imageRefUnsafe;
+          config.image = containerImage.imageRefUnsafe;
         }
       ];
     };
@@ -68,15 +78,16 @@ rec {
     inherit (n2c.nix2container) buildImage;
   };
 
-  copyToContainerd = pkgs.writeScriptBin "copyToContainerd" # fish
-  ''
-    #! ${lib.getExe pkgs.fish}
-    set archivedir $(mktemp -d)
-    set --export CONTAINERD_ADDRESS /run/containerd/containerd.sock
-    ${lib.getExe n2c.skopeo-nix2container} --insecure-policy copy nix:${containerImage} oci-archive:$archivedir/archive.tar:${containerImage.imageRefUnsafe}
-    sudo -E ${lib.getExe' pkgs.containerd "ctr"} --namespace k8s.io images import $archivedir/archive.tar
-    rm -r $archivedir
-  '';
+  copyToContainerd =
+    pkgs.writeScriptBin "copyToContainerd" # fish
+      ''
+        #! ${lib.getExe pkgs.fish}
+        set archivedir $(mktemp -d)
+        set --export CONTAINERD_ADDRESS /run/containerd/containerd.sock
+        ${lib.getExe n2c.skopeo-nix2container} --insecure-policy copy nix:${containerImage} oci-archive:$archivedir/archive.tar:docker.io/library/${containerImage.imageRefUnsafe}
+        sudo -E ${lib.getExe' pkgs.containerd "ctr"} --namespace k8s.io images import $archivedir/archive.tar
+        rm -r $archivedir
+      '';
 
   # simpler than devshell
   python = pkgs.python3.withPackages (

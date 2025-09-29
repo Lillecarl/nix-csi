@@ -1,16 +1,16 @@
 { ... }:
 {
   config = {
-    kubernetes.api.resources.clusterRoleBindings."cknix-binding" = {
+    kubernetes.api.resources.clusterRoleBindings."nix-csi-binding" = {
       roleRef = {
         apiGroup = "rbac.authorization.k8s.io";
         kind = "ClusterRole";
-        name = "cknix";
+        name = "nix-csi";
       };
       subjects = [
         {
           kind = "ServiceAccount";
-          name = "cknix";
+          name = "nix-csi";
           namespace = "default";
         }
       ];

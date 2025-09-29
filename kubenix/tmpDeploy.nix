@@ -5,45 +5,45 @@ in
 {
   config = {
     kubernetes.customResourceAttrs = {
-      cknixHelloExpression = lib.mkIf false {
-        apiVersion = "cknix.cool/v1";
+      nixCsiHelloExpression = lib.mkIf false {
+        apiVersion = "nix.csi/v1";
         kind = "Expression";
         metadata = {
           name = "hello";
-          namespace = config.cknixNamespace;
+          namespace = config.namespace;
         };
         data = {
-          expr = "(import /cknix/default.nix).legacyPackages.x86_64-linux.hello";
+          expr = "(import /nix-csi/default.nix).legacyPackages.x86_64-linux.hello";
         };
       };
     };
-    kubernetes.resources.persistentVolumes.cknixtest = lib.mkIf false {
-      metadata.namespace = config.cknixNamespace;
+    kubernetes.resources.persistentVolumes.nixcsitest = lib.mkIf false {
+      metadata.namespace = config.namespace;
       spec = {
         accessModes = [ "ReadWriteMany" ];
         capacity.storage = "1M";
         csi = {
-          driver = "cknix.csi.store";
+          driver = "nix.csi.store";
           volumeAttributes = { };
-          volumeHandle = "cknixtest";
+          volumeHandle = "nix-csi-test";
         };
         persistentVolumeReclaimPolicy = "Delete";
-        storageClassName = "cknix-csi";
+        storageClassName = "nix-csi";
         volumeMode = "Filesystem";
       };
     };
     kubernetes.resources.configMaps.nix-config = {
-      metadata.namespace = config.cknixNamespace;
+      metadata.namespace = config.namespace;
       data."nix.conf" = ''
         build-users-group = root
         auto-allocate-uids = true
-        experimental-features = nix-command flakes auto-allocate-uids
+        experimental-features = nix-command flakes auto-allocate-uids fetch-tree
       '';
     };
     kubernetes.resources.daemonSets.testd = {
       metadata = {
-        namespace = config.cknixNamespace;
-        annotations."cknix-expr" = "hello";
+        namespace = config.namespace;
+        annotations."nix-csi-expr" = "hello";
       };
       spec = {
         updateStrategy = {
@@ -83,7 +83,7 @@ in
                   inherit readOnly;
                 }
                 {
-                  name = "cknix-volume";
+                  name = "nix-volume";
                   mountPath = "/nix";
                   inherit readOnly;
                 }
@@ -96,9 +96,9 @@ in
                 configMap.name = "nix-config";
               }
               {
-                name = "cknix-volume";
+                name = "nix-volume";
                 csi = {
-                  driver = "cknix.csi.store";
+                  driver = "nix.csi.store";
                   inherit readOnly;
                   volumeAttributes.expr = builtins.readFile ../containerMount.nix;
                 };

@@ -4,11 +4,10 @@
   ...
 }:
 let
-  namespace = config.cknixNamespace;
+  namespace = config.namespace;
 in
 {
   config = lib.mkIf (namespace != "default") {
-    # Create cknix namespace
     kubernetes.api.resources.namespaces.${namespace} = {
       metadata = {
         name = namespace;

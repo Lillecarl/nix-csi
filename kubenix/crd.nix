@@ -1,10 +1,10 @@
 { ... }:
 {
   config = {
-    kubernetes.api.resources.customResourceDefinitions."expressions.cknix.cool" = {
+    kubernetes.api.resources.customResourceDefinitions."expressions.nix.csi" = {
       spec = {
         conversion.strategy = "None";
-        group = "cknix.cool";
+        group = "nix.csi";
         names = {
           kind = "Expression";
           listKind = "ExpressionList";
