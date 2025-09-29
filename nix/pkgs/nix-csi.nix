@@ -28,7 +28,16 @@ let
 in
 buildPythonApplication {
   inherit pname version;
-  src = ../..;
+  src = lib.cleanSourceWith {
+    filter =
+      name: type:
+      let
+        path = toString name;
+        base = baseNameOf path;
+      in
+      base == "pyproject.toml" || lib.hasPrefix "nix_csi/" path;
+    src = ../..;
+  };
   pyproject = true;
   nativeBuildInputs = [ setuptools-scm ];
   propagatedBuildInputs = [
