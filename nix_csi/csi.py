@@ -1,4 +1,3 @@
-from enum import unique
 import logging
 import os
 import socket
@@ -6,6 +5,8 @@ import argparse
 import shutil
 import tempfile
 import hashlib
+import asyncio
+import sys
 
 from typing import Any
 from google.protobuf.wrappers_pb2 import BoolValue
@@ -15,9 +16,9 @@ from grpclib.const import Status
 from csi import csi_grpc, csi_pb2
 from pathlib import Path
 
-from . import helpers
-
 logger = logging.getLogger("nix-csi")
+
+sprun = asyncio.create_subprocess_exec
 
 CSI_PLUGIN_NAME = "nix.csi.store"
 CSI_VENDOR_VERSION = "0.1.0"
@@ -40,32 +41,45 @@ def md5(text: str):
 
 
 # nix eval + nix build + cp + nix_init_db
-async def realize_store(file: Path, root_name: str, out_link: bool) -> None | Path:
-    """Build and realize a Nix expression into a sub/fake store."""
+async def realize_store(file: Path, root_name: str) -> None | Path:
+    """Build and realize a Nix expression into a substore."""
 
     gcPath = NIX_GCROOTS.joinpath(root_name)
 
-    buildArgs = [
+    # Get outPath from eval
+    eval = await sprun(
         "nix",
-        "build",
+        "eval",
+        "--raw",
         "--impure",
-        "--print-out-paths",
         "--file",
         str(file),
-    ]
-    if not out_link:
-        buildArgs.append("--no-link")
-    else:
-        buildArgs.append("--out-link")
-        buildArgs.append(str(gcPath))
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    evalOut, _ = await eval.communicate()
+    if eval.returncode != 0:
+        raise Exception("Evaluation failed")
 
-    # Build the expression
-    build_result = await helpers.run_subprocess(*buildArgs)
-    if build_result.retcode != 0:
+    # Build, stream to console
+    build = await (
+        await sprun(
+            "nix",
+            "build",
+            "--impure",
+            "--out-link",
+            str(gcPath),
+            "--file",
+            str(file),
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+        )
+    ).wait()
+    if build != 0:
         raise Exception("Build failed")
 
     # Get the resulting storepath
-    packagePath = Path(build_result.stdout.strip())
+    packagePath = Path(evalOut.decode())
 
     fakeRoot = NIX_ROOT.joinpath(root_name)
     nixCsiPrefix = fakeRoot.joinpath("nix")
@@ -75,10 +89,15 @@ async def realize_store(file: Path, root_name: str, out_link: bool) -> None | Pa
     NIX_STORE_DIR = nixCsiPrefix.joinpath("store")
 
     # Get dependency paths
-    path_info = await helpers.run_subprocess(
-        "nix", "path-info", "--recursive", str(packagePath)
+    pathInfo = await sprun(
+        "nix",
+        "path-info",
+        "--recursive",
+        str(packagePath),
+        stdout=asyncio.subprocess.PIPE,
     )
-    paths = set(path_info.stdout.strip().splitlines())
+    pathInfoOut, _ = await pathInfo.communicate()
+    paths = set(pathInfoOut.decode().strip().splitlines())
 
     # Create container store structure
     NIX_STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -87,27 +106,22 @@ async def realize_store(file: Path, root_name: str, out_link: bool) -> None | Pa
     # Copy dependencies to substore, rsync saves a lot of implementation headache
     # here. --archive keeps all attributes, --hard-links hardlinks everything
     # it can while replicating symlinks exactly as they were.
-    rsync = await helpers.run_subprocess(
+    rsync = await (await sprun(
         "rsync", "--archive", "--hard-links", *paths, str(NIX_STORE_DIR)
-    )
+    )).wait()
 
     # Link root derivation to /nix/var/result in the container. This is a "well-know" path
-    ln = await helpers.run_subprocess(
-        "ln", "--symbolic", str(packagePath), str(packageResultPath)
-    )
+    ln = await (await sprun("ln", "--symbolic", str(packagePath), str(packageResultPath))).wait()
 
     # Create Nix database
     # This is an execline script that runs nix-store --dump-db | NIX_STATE_DIR=something nix-store --load-db
-    nix_init_db = await helpers.run_subprocess(
-        "nix_init_db", str(NIX_STATE_DIR), *paths
-    )
+    nix_init_db = await (await sprun("nix_init_db", str(NIX_STATE_DIR), *paths)).wait()
 
-    if rsync.retcode != 0 or ln.retcode != 0 or nix_init_db.retcode != 0:
-        if out_link:
-            # Remove gcroots if we failed something else
-            gcPath.unlink(missing_ok=True)
-            # Remove what we were working on
-            shutil.rmtree(fakeRoot, True)
+    if rsync != 0 or ln != 0 or nix_init_db != 0:
+        # Remove gcroots if we failed something else
+        gcPath.unlink(missing_ok=True)
+        # Remove what we were working on
+        shutil.rmtree(fakeRoot, True)
         raise Exception("Linking or database initialization failed")
 
     return fakeRoot
@@ -273,12 +287,14 @@ class NodeServicer(csi_grpc.NodeBase):
         request: csi_pb2.NodePublishVolumeRequest | None = await stream.recv_message()
         if request is None:
             raise ValueError("NodePublishVolumeRequest is None")
-        log_request("NodePublishVolume", request)
 
         expr = request.volume_context.get("expr")
 
         if expr is None:
+            log_request("NodePublishVolume", request)
             raise Exception("Couldn't find expression")
+
+        logger.info(f"Requested to build\n{expr}")
 
         pathMd5 = md5(request.target_path)
         gcPath = NIX_GCROOTS.joinpath(pathMd5)
@@ -286,7 +302,7 @@ class NodeServicer(csi_grpc.NodeBase):
         expressionFile = Path(tempfile.mktemp(suffix=".nix"))
         expressionFile.write_text(expr)
 
-        fakeRoot = await realize_store(expressionFile, pathMd5, True)
+        fakeRoot = await realize_store(expressionFile, pathMd5)
         if fakeRoot is None:
             error = "Unable to build fakeStore"
             logger.error(msg=error)
@@ -306,7 +322,7 @@ class NodeServicer(csi_grpc.NodeBase):
             # For readonly we use a bind mount, the benefit is that different
             # container stores using bindmounts will get the same inodes and
             # share page cache with others, reducing host storage and memory usage.
-            await helpers.run_subprocess(
+            mount = await sprun(
                 "mount",
                 "--bind",
                 "--verbose",
@@ -315,6 +331,9 @@ class NodeServicer(csi_grpc.NodeBase):
                 str(sourcePath),
                 str(targetPath),
             )
+            await mount.wait()
+            if mount.returncode != 0:
+                raise Exception("Failed to bind mount")
         else:
             # For readwrite we use an overlayfs mount, the benefit here is that
             # it works as CoW even if the underlying filesystem doesn't support
@@ -324,7 +343,7 @@ class NodeServicer(csi_grpc.NodeBase):
             upperdir = parent.joinpath("upperdir")
             workdir.mkdir(parents=True, exist_ok=True)
             upperdir.mkdir(parents=True, exist_ok=True)
-            await helpers.run_subprocess(
+            mount = await sprun(
                 "mount",
                 "-t",
                 "overlay",
@@ -333,9 +352,12 @@ class NodeServicer(csi_grpc.NodeBase):
                 f"rw,lowerdir={sourcePath},upperdir={upperdir},workdir={workdir}",
                 str(targetPath),
             )
+            await mount.wait()
+            if mount.returncode != 0:
+                raise Exception("Failed to overlayfs mount")
 
         # Relink nix-csi gcroots to a Path that's removed with the pod
-        await helpers.run_subprocess(
+        relink = await sprun(
             "ln",
             "--symbolic",
             "--force",
@@ -343,6 +365,7 @@ class NodeServicer(csi_grpc.NodeBase):
             str(Path(request.target_path).joinpath("var/result")),
             str(gcPath),
         )
+        await relink.wait()
 
         reply = csi_pb2.NodePublishVolumeResponse()
         await stream.send_message(reply)
@@ -360,7 +383,9 @@ class NodeServicer(csi_grpc.NodeBase):
             shutil.rmtree(NIX_ROOT.joinpath(pathMd5), True)
         except Exception as ex:
             logger.error(ex)
-        await helpers.run_subprocess("umount", "--verbose", request.target_path)
+        umount = await (await sprun("umount", "--verbose", request.target_path)).wait()
+        if umount != 0:
+            logger.error("Failed to umount")
 
         reply = csi_pb2.NodeUnpublishVolumeResponse()
         await stream.send_message(reply)
