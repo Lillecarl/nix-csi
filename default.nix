@@ -52,6 +52,19 @@ rec {
             services.nix-csi = {
               command = "${lib.getExe nix-csi} --node";
               options = [ "shares-console"];
+              depends-on-d = [ "setup"];
+            };
+            services.setup = {
+              type = "scripted";
+              command = lib.getExe (pkgs.writeScriptBin "setupScript" # fish
+              ''
+                #! ${lib.getExe pkgs.fish}
+                mkdir -p /home/{nix,root}
+                mkdir -p /var/{log,lib,cache}
+                mkdir -p /etc
+                mkdir -p /tmp
+                mkdir -p /root
+              '');
             };
           };
         }
