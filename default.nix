@@ -72,9 +72,32 @@ rec {
   manifestYAML = kubenixEval.config.kubernetes.resultYAML;
   manifestJSON = kubenixEval.config.kubernetes.result;
 
+  nixUserGroupShadow =
+    let
+      shell = lib.getExe pkgs.fish;
+    in
+    ((import ./nix/dockerUtils.nix pkgs).nonRootShadowSetup {
+      users = [
+        {
+          name = "root";
+          id = 0;
+          inherit shell;
+        }
+        {
+          name = "nix";
+          id = 1000;
+          inherit shell;
+        }
+        {
+          name = "nixbld";
+          id = 1001;
+          inherit shell;
+        }
+      ];
+    });
   # script to build container image
   containerImage = pkgs.callPackage ./nix/pkgs/containerimage.nix {
-    inherit dinixEval;
+    inherit dinixEval nixUserGroupShadow;
     inherit (n2c.nix2container) buildImage;
   };
 
@@ -106,4 +129,5 @@ rec {
       n2c.skopeo-nix2container
     ];
   };
+  inherit pkgs;
 }

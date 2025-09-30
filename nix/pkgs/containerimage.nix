@@ -8,9 +8,11 @@
   rsync,
   dinixEval,
   lix,
-
+  git,
   uutils-coreutils-noprefix,
   util-linux,
+
+  nixUserGroupShadow,
   fish,
 }:
 let
@@ -34,7 +36,8 @@ let
   folders = runCommand "folders" { } ''
     ${mkdir} -p $out/tmp
     ${mkdir} -p $out/var/log
-    ${mkdir} -p $out/home/nix-csi
+    ${mkdir} -p $out/home/nix
+    ${mkdir} -p $out/home/root
   '';
   rootEnv = buildEnv {
     name = "rootEnv";
@@ -47,10 +50,12 @@ let
     rsync
     util-linux
     lix
+    git
     folders
     fish
     uutils-coreutils-noprefix
     dockerTools.caCertificates
+    nixUserGroupShadow
   ];
 in
 buildImage {
@@ -58,6 +63,8 @@ buildImage {
   copyToRoot = rootEnv;
   config = {
     Env = [
+      "USER=nix"
+      "HOME=/home/nix"
       "PATH=/bin"
     ];
     Entrypoint = [ (lib.getExe dinixEval.config.dinitLauncher) ];
