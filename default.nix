@@ -50,7 +50,8 @@ rec {
           config = {
             services.boot.depends-on-d = [ "nix-csi" ];
             services.nix-csi = {
-              command = lib.getExe nix-csi;
+              command = "${lib.getExe nix-csi} --node";
+              options = [ "shares-console"];
             };
           };
         }

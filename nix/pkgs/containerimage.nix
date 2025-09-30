@@ -35,6 +35,7 @@ let
       '';
   folders = runCommand "folders" { } ''
     ${mkdir} -p $out/tmp
+    ${mkdir} -p $out/run
     ${mkdir} -p $out/var/log
     ${mkdir} -p $out/home/nix
     ${mkdir} -p $out/home/root
@@ -67,7 +68,10 @@ buildImage {
       "HOME=/home/nix"
       "PATH=/bin"
     ];
-    Entrypoint = [ (lib.getExe dinixEval.config.dinitLauncher) ];
+    Entrypoint = [
+      (lib.getExe dinixEval.config.dinitLauncher)
+      "--container"
+    ];
     WorkingDir = "/home/nix-csi";
   };
 }
