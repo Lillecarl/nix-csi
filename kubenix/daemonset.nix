@@ -47,8 +47,9 @@
                 name = "nix-csi-node";
                 image = config.image;
                 command = [
-                  "sleep"
-                  "infinity"
+                  "tail"
+                  "-f"
+                  "/dev/null"
                 ];
                 securityContext.privileged = true;
                 env = [
