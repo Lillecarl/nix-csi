@@ -37,7 +37,7 @@ in
       data."nix.conf" = ''
         build-users-group = root
         auto-allocate-uids = true
-        experimental-features = nix-command flakes auto-allocate-uids fetch-tree
+        experimental-features = nix-command flakes auto-allocate-uids fetch-tree fetch-closure
       '';
     };
     kubernetes.resources.daemonSets.testd = {

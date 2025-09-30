@@ -78,7 +78,6 @@
                   {
                     name = "nix-store";
                     mountPath = "/nix";
-                    # mountPropagation = "HostToContainer";
                     mountPropagation = "Bidirectional";
                   }
                   {
@@ -86,9 +85,8 @@
                     mountPath = "/registration";
                   }
                   {
-                    name = "nixos-unstable";
-                    mountPath = "/etc/nixpaths/nixos-unstable";
-                    readOnly = true;
+                    name = "nix-config";
+                    mountPath = "/etc/nix";
                   }
                   {
                     name = "nixdev";
@@ -169,6 +167,10 @@
               {
                 name = "registration-dir";
                 hostPath.path = "/var/lib/kubelet/plugins_registry";
+              }
+              {
+                name = "nix-config";
+                configMap.name = "nix-config";
               }
               {
                 name = "nixos-unstable";
