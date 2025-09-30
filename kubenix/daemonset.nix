@@ -25,13 +25,7 @@
             initContainers = [
               {
                 name = "init";
-                command = [
-                  "rsync"
-                  "--verbose"
-                  "--archive"
-                  "/nix/."
-                  "/nix2/"
-                ];
+                command = [ "initCopy" ];
                 image = config.image;
                 volumeMounts = [
                   {

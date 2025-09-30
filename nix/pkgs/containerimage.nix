@@ -1,7 +1,9 @@
+# You could easily get tempted to create folders that go into container root
+# using copyToRoot but it's easy to shoot yourself in the foot with Kubernetes
+# mounting it's own shit over those paths making a mess out of your life.
 {
   lib,
   writeScriptBin,
-  runCommand,
   dockerTools,
   buildEnv,
   buildImage,
@@ -16,43 +18,31 @@
   fish,
 }:
 let
-  mkdir = lib.getExe' uutils-coreutils-noprefix "mkdir";
-  dirname = lib.getExe' uutils-coreutils-noprefix "dirname";
-  touch = lib.getExe' uutils-coreutils-noprefix "touch";
+  fishDinitLauncher =
+    writeScriptBin "fishDinitLauncher" # fish
+      ''
+        #! ${lib.getExe fish}
+        mkdir -p /run
+        exec ${lib.getExe dinixEval.config.dinitLauncher} --container
+      '';
   initCopy =
     writeScriptBin "initCopy" # fish
       ''
         #! ${lib.getExe fish}
-        set initFile /nix2/var/initialized
-        if ! test -f $initFile
-          ${rsync} --verbose --archive --ignore-existing /nix/. /nix2/
-          ${mkdir} -p $(${dirname} $initFile)
-          ${touch} $initFile
-        else
-          echo "Already copied store from image"
-        end
-        exit 0
+        exec ${lib.getExe rsync} --verbose --archive --ignore-existing /nix/ /nix2/
       '';
-  folders = runCommand "folders" { } ''
-    ${mkdir} -p $out/tmp
-    ${mkdir} -p $out/run
-    ${mkdir} -p $out/var/log
-    ${mkdir} -p $out/home/nix
-    ${mkdir} -p $out/home/root
-  '';
   rootEnv = buildEnv {
     name = "rootEnv";
     paths = rootPaths;
   };
   rootPaths = [
     initCopy
-    dinixEval.config.dinitLauncher
+    fishDinitLauncher
     dinixEval.config.package
     rsync
     util-linux
     lix
     git
-    folders
     fish
     uutils-coreutils-noprefix
     dockerTools.caCertificates
@@ -61,17 +51,18 @@ let
 in
 buildImage {
   name = "nix-csi";
+  # Links derivation into containers root
   copyToRoot = rootEnv;
+  # Storepaths to bring into container
+  # layers = rootPaths ++ [ fishDinitLauncher ];
+  # Image configuration
   config = {
     Env = [
       "USER=nix"
       "HOME=/home/nix"
       "PATH=/bin"
     ];
-    Entrypoint = [
-      (lib.getExe dinixEval.config.dinitLauncher)
-      "--container"
-    ];
+    Entrypoint = [ (lib.getExe fishDinitLauncher) ];
     WorkingDir = "/home/nix-csi";
   };
 }
