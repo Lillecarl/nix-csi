@@ -1,37 +1,9 @@
 { lib, config, ... }:
 let
-  readOnly = true;
+  readOnly = false;
 in
 {
   config = {
-    kubernetes.customResourceAttrs = {
-      nixCsiHelloExpression = lib.mkIf false {
-        apiVersion = "nix.csi/v1";
-        kind = "Expression";
-        metadata = {
-          name = "hello";
-          namespace = config.namespace;
-        };
-        data = {
-          expr = "(import /nix-csi/default.nix).legacyPackages.x86_64-linux.hello";
-        };
-      };
-    };
-    kubernetes.resources.persistentVolumes.nixcsitest = lib.mkIf false {
-      metadata.namespace = config.namespace;
-      spec = {
-        accessModes = [ "ReadWriteMany" ];
-        capacity.storage = "1M";
-        csi = {
-          driver = "nix.csi.store";
-          volumeAttributes = { };
-          volumeHandle = "nix-csi-test";
-        };
-        persistentVolumeReclaimPolicy = "Delete";
-        storageClassName = "nix-csi";
-        volumeMode = "Filesystem";
-      };
-    };
     kubernetes.resources.configMaps.nix-config = {
       metadata.namespace = config.namespace;
       data."nix.conf" = ''
@@ -55,33 +27,32 @@ in
           metadata.labels.app = "testd";
           spec = {
             containers.this = {
-              # command = [
-              #   "/nix/var/result/bin/tini"
-              #   "/nix/var/result/bin/init"
-              # ];
-              # image = "dramforever/scratch:latest";
               command = [
-                "tail"
-                "-f"
-                "/dev/null"
+                # "/nix/var/result/bin/tini"
+                # "/nix/var/result/bin/init"
+                "/nix/var/result/init"
+                "sleep"
+                "infinity"
               ];
-              image = "ubuntu:latest";
+              image = "dramforever/scratch:latest";
+              # command = [
+              #   "tail"
+              #   "-f"
+              #   "/dev/null"
+              # ];
+              # image = "ubuntu:latest";
               env = [
-                # {
-                #   name = "PATH";
-                #   value = "/nix/var/result/bin";
-                # }
                 {
-                  name = "container";
-                  value = "1";
+                  name = "PATH";
+                  value = "/nix/var/result/bin";
                 }
               ];
               volumeMounts = [
-                {
-                  name = "nix-config";
-                  mountPath = "/etc/nix";
-                  inherit readOnly;
-                }
+                # {
+                #   name = "nix-config";
+                #   mountPath = "/etc/nix";
+                #   inherit readOnly;
+                # }
                 {
                   name = "nix-volume";
                   mountPath = "/nix";
@@ -100,7 +71,8 @@ in
                 csi = {
                   driver = "nix.csi.store";
                   inherit readOnly;
-                  volumeAttributes.expr = builtins.readFile ../containerMount.nix;
+                  # volumeAttributes.expr = builtins.readFile ../containerMount.nix;
+                  volumeAttributes.expr = builtins.readFile ../nixNG.nix;
                 };
               }
             ];
