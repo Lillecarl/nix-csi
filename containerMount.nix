@@ -13,6 +13,7 @@ let
     "/var/log"
     "/var/lib"
     "/var/run"
+    "/etc/ssl/certs"
   ];
 in
 pkgs.buildEnv {
