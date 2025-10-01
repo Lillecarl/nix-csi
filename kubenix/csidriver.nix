@@ -4,11 +4,8 @@
     kubernetes.api.resources.cSIDrivers."nix.csi.store" = {
       spec = {
         attachRequired = false;
-        podInfoOnMount = true;
-        volumeLifecycleModes = [
-          "Persistent"
-          "Ephemeral"
-        ];
+        podInfoOnMount = false;
+        volumeLifecycleModes = [ "Ephemeral" ];
         fsGroupPolicy = "File";
         requiresRepublish = false;
         storageCapacity = false;
