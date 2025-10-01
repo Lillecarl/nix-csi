@@ -50,21 +50,24 @@ rec {
           config = {
             services.boot.depends-on-d = [ "nix-csi" ];
             services.nix-csi = {
-              command = "${lib.getExe nix-csi} --node";
-              options = [ "shares-console"];
-              depends-on-d = [ "setup"];
+              command = lib.getExe nix-csi;
+              options = [ "shares-console" ];
+              depends-on-d = [ "runtimedirs" ];
             };
-            services.setup = {
+            services.runtimedirs = {
               type = "scripted";
-              command = lib.getExe (pkgs.writeScriptBin "setupScript" # fish
-              ''
-                #! ${lib.getExe pkgs.fish}
-                mkdir -p /home/{nix,root}
-                mkdir -p /var/{log,lib,cache}
-                mkdir -p /etc
-                mkdir -p /tmp
-                mkdir -p /root
-              '');
+              command = lib.getExe (
+                pkgs.writeScriptBin "setupScript" # fish
+                  ''
+                    #! ${lib.getExe pkgs.fish}
+                    mkdir -p /home/{nix,root}
+                    mkdir -p /var/{log,lib,cache}
+                    mkdir -p /etc
+                    mkdir -p /run
+                    mkdir -p /tmp
+                    mkdir -p /root
+                  ''
+              );
             };
           };
         }

@@ -3,13 +3,9 @@ import logging
 import argparse
 from . import csi
 
+
 def parse_args():
     parser = argparse.ArgumentParser(description="nix CSI driver")
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument(
-        "--controller", action="store_true", help="Run in controller mode"
-    )
-    group.add_argument("--node", action="store_true", help="Run in node mode")
     parser.add_argument(
         "--loglevel",
         default="INFO",
@@ -19,7 +15,7 @@ def parse_args():
     return parser.parse_args()
 
 
-async def main_async():
+async def main():
     args = parse_args()
     logging.basicConfig(
         level=getattr(logging, args.loglevel),
@@ -29,16 +25,8 @@ async def main_async():
     loglevel_str = logging.getLevelName(logger.getEffectiveLevel())
     logger.info(f"Current log level: {loglevel_str}")
 
-    # Don't log hpack stuff
-    hpacklogger = logging.getLogger("hpack.hpack")
-    hpacklogger.setLevel(logging.INFO)
-
-    await csi.serve(args)
-
-
-def main():
-    asyncio.run(main_async())
+    await csi.serve()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

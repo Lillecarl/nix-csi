@@ -1,14 +1,13 @@
 import logging
 import os
 import socket
-import argparse
 import shutil
 import tempfile
 import hashlib
 import asyncio
 import sys
 
-from typing import Any
+from typing import Any, NamedTuple
 from google.protobuf.wrappers_pb2 import BoolValue
 from grpclib.server import Server
 from grpclib.exceptions import GRPCError
@@ -17,8 +16,6 @@ from csi import csi_grpc, csi_pb2
 from pathlib import Path
 
 logger = logging.getLogger("nix-csi")
-
-sprun = asyncio.create_subprocess_exec
 
 CSI_PLUGIN_NAME = "nix.csi.store"
 CSI_VENDOR_VERSION = "0.1.0"
@@ -32,99 +29,47 @@ NIX_GCROOTS = Path("/nix/var/nix/gcroots/nix-csi")
 NIX_GCROOTS.mkdir(parents=True, exist_ok=True)
 
 
+class CapturedOutput(NamedTuple):
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+# Run async subprocess, capture output and returncode
+async def run_captured(*args):
+    proc = await asyncio.create_subprocess_exec(
+        *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
+    ret = await proc.communicate()
+    if proc.returncode is None:  # Can't happen? Make type-checker happy
+        raise Exception(f"Couldn't get returncode from command {args}")
+    return CapturedOutput(
+        proc.returncode, ret[0].decode().strip(), ret[1].decode().strip()
+    )
+
+
+# Run async subprocess, forward output to console and return returncode
+async def run_console(*args):
+    proc = await asyncio.create_subprocess_exec(
+        *args, stdout=sys.stdout, stderr=sys.stderr
+    )
+    ret = await proc.wait()
+    return ret
+
+
+# Run async subprocess, dismiss output and return returncode
+async def run_devnull(*args):
+    proc = await asyncio.create_subprocess_exec(*args)
+    ret = await proc.wait()
+    return ret
+
+
 def log_request(method_name: str, request: Any):
     logger.info("Received %s:\n%s", method_name, request)
 
 
 def md5(text: str):
     return hashlib.md5(text.encode()).hexdigest()
-
-
-# nix eval + nix build + cp + nix_init_db
-async def realize_store(file: Path, root_name: str) -> None | Path:
-    """Build and realize a Nix expression into a substore."""
-
-    gcPath = NIX_GCROOTS.joinpath(root_name)
-
-    # Get outPath from eval
-    eval = await sprun(
-        "nix",
-        "eval",
-        "--raw",
-        "--impure",
-        "--file",
-        str(file),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    evalOut, _ = await eval.communicate()
-    if eval.returncode != 0:
-        raise Exception("Evaluation failed")
-
-    # Build, stream to console
-    build = await (
-        await sprun(
-            "nix",
-            "build",
-            "--impure",
-            "--out-link",
-            str(gcPath),
-            "--file",
-            str(file),
-            stdout=sys.stdout,
-            stderr=sys.stderr,
-        )
-    ).wait()
-    if build != 0:
-        raise Exception("Build failed")
-
-    # Get the resulting storepath
-    packagePath = Path(evalOut.decode())
-
-    fakeRoot = NIX_ROOT.joinpath(root_name)
-    nixCsiPrefix = fakeRoot.joinpath("nix")
-    packageResultPath = nixCsiPrefix.joinpath("var/result")
-    # Capitalized to emphasise they're Nix environment variables
-    NIX_STATE_DIR = nixCsiPrefix.joinpath("var/nix")
-    NIX_STORE_DIR = nixCsiPrefix.joinpath("store")
-
-    # Get dependency paths
-    pathInfo = await sprun(
-        "nix",
-        "path-info",
-        "--recursive",
-        str(packagePath),
-        stdout=asyncio.subprocess.PIPE,
-    )
-    pathInfoOut, _ = await pathInfo.communicate()
-    paths = set(pathInfoOut.decode().strip().splitlines())
-
-    # Create container store structure
-    NIX_STATE_DIR.mkdir(parents=True, exist_ok=True)
-    NIX_STORE_DIR.mkdir(parents=True, exist_ok=True)
-
-    # Copy dependencies to substore, rsync saves a lot of implementation headache
-    # here. --archive keeps all attributes, --hard-links hardlinks everything
-    # it can while replicating symlinks exactly as they were.
-    rsync = await (await sprun(
-        "rsync", "--archive", "--hard-links", *paths, str(NIX_STORE_DIR)
-    )).wait()
-
-    # Link root derivation to /nix/var/result in the container. This is a "well-know" path
-    ln = await (await sprun("ln", "--symbolic", str(packagePath), str(packageResultPath))).wait()
-
-    # Create Nix database
-    # This is an execline script that runs nix-store --dump-db | NIX_STATE_DIR=something nix-store --load-db
-    nix_init_db = await (await sprun("nix_init_db", str(NIX_STATE_DIR), *paths)).wait()
-
-    if rsync != 0 or ln != 0 or nix_init_db != 0:
-        # Remove gcroots if we failed something else
-        gcPath.unlink(missing_ok=True)
-        # Remove what we were working on
-        shutil.rmtree(fakeRoot, True)
-        raise Exception("Linking or database initialization failed")
-
-    return fakeRoot
 
 
 class IdentityServicer(csi_grpc.IdentityBase):
@@ -162,126 +107,6 @@ class IdentityServicer(csi_grpc.IdentityBase):
         await stream.send_message(reply)
 
 
-class ControllerServicer(csi_grpc.ControllerBase):
-    async def CreateVolume(self, stream):
-        request: csi_pb2.CreateVolumeRequest | None = await stream.recv_message()
-        if request is None:
-            raise ValueError("CreateVolumeRequest is None")
-        log_request("CreateVolume", request)
-
-        volume_id = request.name
-        capacity_bytes = (
-            request.capacity_range.required_bytes if request.capacity_range else 0
-        )
-
-        reply = csi_pb2.CreateVolumeResponse(
-            volume=csi_pb2.Volume(
-                volume_id=volume_id,
-                capacity_bytes=capacity_bytes,
-                volume_context={},
-                accessible_topology=[],
-            )
-        )
-        await stream.send_message(reply)
-
-    async def DeleteVolume(self, stream):
-        request: csi_pb2.DeleteVolumeRequest | None = await stream.recv_message()
-        if request is None:
-            raise ValueError("DeleteVolumeRequest is None")
-        log_request("DeleteVolume", request)
-
-        reply = csi_pb2.DeleteVolumeResponse()
-        await stream.send_message(reply)
-
-    async def ControllerPublishVolume(self, stream):
-        raise Exception("ControllerPublishVolume not implemented")
-
-    async def ControllerUnpublishVolume(self, stream):
-        raise Exception("ControllerUnpublishVolume not implemented")
-
-    async def ValidateVolumeCapabilities(self, stream):
-        request: (
-            csi_pb2.ValidateVolumeCapabilitiesRequest | None
-        ) = await stream.recv_message()
-        if request is None:
-            raise ValueError("ValidateVolumeCapabilitiesRequest is None")
-        log_request("ValidateVolumeCapabilities", request)
-        supported = any(
-            cap.access_mode.mode
-            == csi_pb2.VolumeCapability.AccessMode.SINGLE_NODE_WRITER
-            for cap in request.volume_capabilities
-        )
-        if supported:
-            reply = csi_pb2.ValidateVolumeCapabilitiesResponse(
-                confirmed=csi_pb2.ValidateVolumeCapabilitiesResponse.Confirmed(
-                    volume_capabilities=request.volume_capabilities
-                )
-            )
-        else:
-            reply = csi_pb2.ValidateVolumeCapabilitiesResponse(
-                message="Only SINGLE_NODE_WRITER supported"
-            )
-        await stream.send_message(reply)
-
-    async def ListVolumes(self, stream):
-        raise Exception("ListVolumes not implemented")
-
-    async def GetCapacity(self, stream):
-        raise Exception("GetCapacity not implemented")
-
-    async def ControllerGetCapabilities(self, stream):
-        request: (
-            csi_pb2.ControllerGetCapabilitiesRequest | None
-        ) = await stream.recv_message()
-        if request is None:
-            raise ValueError("ControllerGetCapabilitiesRequest is None")
-        # log_request("ControllerGetCapabilities", request)
-        reply = csi_pb2.ControllerGetCapabilitiesResponse(
-            capabilities=[
-                csi_pb2.ControllerServiceCapability(
-                    rpc=csi_pb2.ControllerServiceCapability.RPC(
-                        type=csi_pb2.ControllerServiceCapability.RPC.CREATE_DELETE_VOLUME
-                    )
-                ),
-            ]
-        )
-        await stream.send_message(reply)
-
-    async def CreateSnapshot(self, stream):
-        raise Exception("CreateSnapshot not implemented")
-
-    async def DeleteSnapshot(self, stream):
-        raise Exception("DeleteSnapshot not implemented")
-
-    async def ListSnapshots(self, stream):
-        raise Exception("ListSnapshots not implemented")
-
-    async def ControllerExpandVolume(self, stream):
-        raise Exception("ControllerExpandVolume not implemented")
-
-    async def ControllerGetVolume(self, stream):
-        request: csi_pb2.ControllerGetVolumeRequest | None = await stream.recv_message()
-        if request is None:
-            raise ValueError("ControllerGetVolumeRequest is None")
-        log_request("ControllerGetVolume", request)
-        reply = csi_pb2.ControllerGetVolumeResponse(
-            volume=csi_pb2.Volume(
-                volume_id=request.volume_id,
-            )
-        )
-        await stream.send_message(reply)
-
-    async def ControllerModifyVolume(self, stream):
-        request: (
-            csi_pb2.ControllerModifyVolumeRequest | None
-        ) = await stream.recv_message()
-        if request is None:
-            raise ValueError("ControllerModifyVolumeRequest is None")
-        log_request("ControllerModifyVolume", request)
-        reply = csi_pb2.ControllerModifyVolumeResponse()
-        await stream.send_message(reply)
-
-
 class NodeServicer(csi_grpc.NodeBase):
     async def NodePublishVolume(self, stream):
         request: csi_pb2.NodePublishVolumeRequest | None = await stream.recv_message()
@@ -289,20 +114,91 @@ class NodeServicer(csi_grpc.NodeBase):
             raise ValueError("NodePublishVolumeRequest is None")
 
         expr = request.volume_context.get("expr")
-
         if expr is None:
             log_request("NodePublishVolume", request)
             raise Exception("Couldn't find expression")
 
         logger.info(f"Requested to build\n{expr}")
 
-        pathMd5 = md5(request.target_path)
-        gcPath = NIX_GCROOTS.joinpath(pathMd5)
+        root_name = md5(request.target_path)
+        gcPath = NIX_GCROOTS.joinpath(root_name)
 
         expressionFile = Path(tempfile.mktemp(suffix=".nix"))
         expressionFile.write_text(expr)
 
-        fakeRoot = await realize_store(expressionFile, pathMd5)
+        gcPath = NIX_GCROOTS.joinpath(root_name)
+
+        # Get outPath from eval
+        eval = await run_captured(
+            "nix",
+            "eval",
+            "--raw",
+            "--impure",
+            "--file",
+            str(expressionFile),
+        )
+        if eval.returncode != 0:
+            raise Exception("Evaluation failed")
+
+        # Build, stream to console
+        build = await run_console(
+            "nix",
+            "build",
+            "--impure",
+            "--out-link",
+            str(gcPath),
+            "--file",
+            str(expressionFile),
+        )
+        if build != 0:
+            raise Exception("Build failed")
+
+        # Get the resulting storepath
+        packagePath = Path(eval.stdout)
+
+        fakeRoot = NIX_ROOT.joinpath(root_name)
+        nixCsiPrefix = fakeRoot.joinpath("nix")
+        packageResultPath = nixCsiPrefix.joinpath("var/result")
+        # Capitalized to emphasise they're Nix environment variables
+        NIX_STATE_DIR = nixCsiPrefix.joinpath("var/nix")
+        NIX_STORE_DIR = nixCsiPrefix.joinpath("store")
+
+        # Get dependency paths
+        pathInfo = await run_captured(
+            "nix",
+            "path-info",
+            "--recursive",
+            str(packagePath),
+        )
+        paths = set(pathInfo.stdout.splitlines())
+
+        # Create container store structure
+        NIX_STATE_DIR.mkdir(parents=True, exist_ok=True)
+        NIX_STORE_DIR.mkdir(parents=True, exist_ok=True)
+
+        # Copy dependencies to substore, rsync saves a lot of implementation headache
+        # here. --archive keeps all attributes, --hard-links hardlinks everything
+        # it can while replicating symlinks exactly as they were.
+        rsync = await run_devnull(
+            "rsync", "--archive", "--hard-links", *paths, str(NIX_STORE_DIR)
+        )
+
+        # Link root derivation to /nix/var/result in the container. This is a "well-know" path
+        ln = await run_devnull(
+            "ln", "--force", "--symbolic", str(packagePath), str(packageResultPath)
+        )
+
+        # Create Nix database
+        # This is an execline script that runs nix-store --dump-db | NIX_STATE_DIR=something nix-store --load-db
+        nix_init_db = await run_devnull("nix_init_db", str(NIX_STATE_DIR), *paths)
+
+        if rsync != 0 or ln != 0 or nix_init_db != 0:
+            # Remove gcroots if we failed something else
+            gcPath.unlink(missing_ok=True)
+            # Remove what we were working on
+            shutil.rmtree(fakeRoot, True)
+            raise Exception("Linking or database initialization failed")
+
         if fakeRoot is None:
             error = "Unable to build fakeStore"
             logger.error(msg=error)
@@ -322,17 +218,16 @@ class NodeServicer(csi_grpc.NodeBase):
             # For readonly we use a bind mount, the benefit is that different
             # container stores using bindmounts will get the same inodes and
             # share page cache with others, reducing host storage and memory usage.
-            mount = await sprun(
+            mount = await run_devnull(
                 "mount",
-                "--bind",
                 "--verbose",
+                "--bind",
                 "-o",
                 "ro",
                 str(sourcePath),
                 str(targetPath),
             )
-            await mount.wait()
-            if mount.returncode != 0:
+            if mount != 0:
                 raise Exception("Failed to bind mount")
         else:
             # For readwrite we use an overlayfs mount, the benefit here is that
@@ -343,8 +238,9 @@ class NodeServicer(csi_grpc.NodeBase):
             upperdir = parent.joinpath("upperdir")
             workdir.mkdir(parents=True, exist_ok=True)
             upperdir.mkdir(parents=True, exist_ok=True)
-            mount = await sprun(
+            mount = await run_devnull(
                 "mount",
+                "--verbose",
                 "-t",
                 "overlay",
                 "overlay",
@@ -352,12 +248,11 @@ class NodeServicer(csi_grpc.NodeBase):
                 f"rw,lowerdir={sourcePath},upperdir={upperdir},workdir={workdir}",
                 str(targetPath),
             )
-            await mount.wait()
-            if mount.returncode != 0:
+            if mount != 0:
                 raise Exception("Failed to overlayfs mount")
 
         # Relink nix-csi gcroots to a Path that's removed with the pod
-        relink = await sprun(
+        await run_devnull(
             "ln",
             "--symbolic",
             "--force",
@@ -365,7 +260,6 @@ class NodeServicer(csi_grpc.NodeBase):
             str(Path(request.target_path).joinpath("var/result")),
             str(gcPath),
         )
-        await relink.wait()
 
         reply = csi_pb2.NodePublishVolumeResponse()
         await stream.send_message(reply)
@@ -383,7 +277,7 @@ class NodeServicer(csi_grpc.NodeBase):
             shutil.rmtree(NIX_ROOT.joinpath(pathMd5), True)
         except Exception as ex:
             logger.error(ex)
-        umount = await (await sprun("umount", "--verbose", request.target_path)).wait()
+        umount = await run_devnull("umount", "--verbose", request.target_path)
         if umount != 0:
             logger.error("Failed to umount")
 
@@ -417,41 +311,35 @@ class NodeServicer(csi_grpc.NodeBase):
         await stream.send_message(reply)
 
     async def NodeGetVolumeStats(self, stream):
+        del stream  # typechecker
         raise Exception("NodeGetVolumeStats not implemented")
 
     async def NodeExpandVolume(self, stream):
+        del stream  # typechecker
         raise Exception("NodeExpandVolume not implemented")
 
     async def NodeStageVolume(self, stream):
+        del stream  # typechecker
         raise Exception("NodeStageVolume not implemented")
 
     async def NodeUnstageVolume(self, stream):
+        del stream  # typechecker
         raise Exception("NodeUnstageVolume not implemented")
 
 
-async def serve(args: argparse.Namespace):
+async def serve():
     sock_path = "/csi/csi.sock"
     try:
         os.unlink(sock_path)
     except FileNotFoundError:
         pass
 
-    server = Server([])
-
-    if getattr(args, "node"):
-        server = Server(
-            [
-                IdentityServicer(),
-                NodeServicer(),
-            ]
-        )
-    if getattr(args, "controller"):
-        server = Server(
-            [
-                IdentityServicer(),
-                ControllerServicer(),
-            ]
-        )
+    server = Server(
+        [
+            IdentityServicer(),
+            NodeServicer(),
+        ]
+    )
 
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.bind(sock_path)
