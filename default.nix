@@ -125,7 +125,7 @@ rec {
         set archivedir $(mktemp -d)
         set --export CONTAINERD_ADDRESS /run/containerd/containerd.sock
         ${lib.getExe n2c.skopeo-nix2container} --insecure-policy copy nix:${containerImage} oci-archive:$archivedir/archive.tar:docker.io/library/${containerImage.imageRefUnsafe}
-        sudo -E ${lib.getExe' pkgs.containerd "ctr"} --namespace k8s.io images import $archivedir/archive.tar
+        sudo -E ${lib.getExe pkgs.nerdctl} --namespace k8s.io load --input $archivedir/archive.tar
         rm -r $archivedir
       '';
 
