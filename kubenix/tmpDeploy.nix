@@ -1,6 +1,6 @@
 { lib, config, ... }:
 let
-  readOnly = false;
+  readOnly = true;
 in
 {
   config = {
@@ -28,11 +28,11 @@ in
           spec = {
             containers.this = {
               command = [
-                # "/nix/var/result/bin/tini"
-                # "/nix/var/result/bin/init"
-                "/nix/var/result/init"
-                "sleep"
-                "infinity"
+                "/nix/var/result/bin/tini"
+                "/nix/var/result/bin/init"
+                # "/nix/var/result/init"
+                # "-c"
+                # "sleep infinity"
               ];
               image = "dramforever/scratch:latest";
               # command = [
@@ -46,13 +46,17 @@ in
                   name = "PATH";
                   value = "/nix/var/result/bin";
                 }
+                {
+                  name = "FISH_UNIT_TESTS_RUNNING";
+                  value = "1";
+                }
               ];
               volumeMounts = [
-                # {
-                #   name = "nix-config";
-                #   mountPath = "/etc/nix";
-                #   inherit readOnly;
-                # }
+                {
+                  name = "nix-config";
+                  mountPath = "/etc/nix";
+                  inherit readOnly;
+                }
                 {
                   name = "nix-volume";
                   mountPath = "/nix";
@@ -71,8 +75,8 @@ in
                 csi = {
                   driver = "nix.csi.store";
                   inherit readOnly;
-                  # volumeAttributes.expr = builtins.readFile ../containerMount.nix;
-                  volumeAttributes.expr = builtins.readFile ../nixNG.nix;
+                  volumeAttributes.expr = builtins.readFile ../guests/containerMount.nix;
+                  # volumeAttributes.expr = builtins.readFile ../guests/nixNG.nix;
                 };
               }
             ];
