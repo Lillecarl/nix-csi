@@ -29,7 +29,7 @@ let
     writeScriptBin "initCopy" # fish
       ''
         #! ${lib.getExe fish}
-        exec ${lib.getExe rsync} --verbose --archive --ignore-existing /nix/ /nix2/
+        exec ${lib.getExe rsync} --verbose --archive --ignore-existing --one-file-system /nix/ /nix2/
       '';
   rootEnv = buildEnv {
     name = "rootEnv";
