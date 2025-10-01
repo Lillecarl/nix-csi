@@ -6,6 +6,7 @@ import tempfile
 import hashlib
 import asyncio
 import sys
+import shlex
 
 from typing import Any, NamedTuple
 from google.protobuf.wrappers_pb2 import BoolValue
@@ -24,44 +25,88 @@ KUBE_NODE_NAME = os.environ.get("KUBE_NODE_NAME")
 if KUBE_NODE_NAME is None:
     raise Exception("Please make sure KUBE_NODE_NAME is set")
 
-NIX_ROOT = Path("/nix/var/nix-csi")
+# Paths we base everything on. Remember that these are CSI pod paths not
+# node paths.
+CSI_ROOT = Path("/nix/var/nix-csi")
+CSI_VOLUMES = CSI_ROOT.joinpath("volumes")
 NIX_GCROOTS = Path("/nix/var/nix/gcroots/nix-csi")
-NIX_GCROOTS.mkdir(parents=True, exist_ok=True)
 
 
-class CapturedOutput(NamedTuple):
+def get_kernel_boot_time() -> int:
+    """Returns kernel boot time as Unix timestamp."""
+    stat_file = Path("/hoststat")
+    for line in stat_file.read_text().splitlines():
+        if line.startswith("btime "):
+            return int(line.split()[1])
+    raise RuntimeError("btime not found in /hoststat")
+
+
+def should_cleanup_mounts() -> bool:
+    """Check if system rebooted since last run."""
+    current_boot = get_kernel_boot_time()
+
+    state_file = CSI_ROOT.joinpath("boottime")
+
+    if not state_file.exists():
+        state_file.write_text(str(current_boot))
+        return False
+
+    last_boot = int(state_file.read_text().strip())
+
+    if current_boot != last_boot:
+        state_file.write_text(str(current_boot))
+        return True
+
+    return False
+
+
+def boot_cleanup():
+    """Cleanup volume trees and gcroots if we have rebooted"""
+    logger.info("Checking boot-time for cleanup operations")
+    if should_cleanup_mounts():
+        if CSI_VOLUMES.exists():
+            logger.info("Cleaning old volumes")
+            shutil.rmtree(CSI_VOLUMES)
+            CSI_VOLUMES.mkdir(parents=True, exist_ok=True)
+        if NIX_GCROOTS.exists():
+            logger.info("Cleaning gcroots")
+            shutil.rmtree(NIX_GCROOTS)
+            NIX_GCROOTS.mkdir(parents=True, exist_ok=True)
+
+
+class SubprocessResult(NamedTuple):
     returncode: int
     stdout: str
     stderr: str
 
 
+def log_command(*args):
+    logger.info(f"Running command: {shlex.join([str(arg) for arg in args])}")
+
+
 # Run async subprocess, capture output and returncode
 async def run_captured(*args):
+    log_command(*args)
     proc = await asyncio.create_subprocess_exec(
-        *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        *[str(arg) for arg in args],
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
     ret = await proc.communicate()
-    if proc.returncode is None:  # Can't happen? Make type-checker happy
-        raise Exception(f"Couldn't get returncode from command {args}")
-    return CapturedOutput(
+    assert proc.returncode is not None
+    return SubprocessResult(
         proc.returncode, ret[0].decode().strip(), ret[1].decode().strip()
     )
 
 
 # Run async subprocess, forward output to console and return returncode
 async def run_console(*args):
+    log_command(*args)
     proc = await asyncio.create_subprocess_exec(
-        *args, stdout=sys.stdout, stderr=sys.stderr
+        *[str(arg) for arg in args], stdout=sys.stdout, stderr=sys.stderr
     )
     ret = await proc.wait()
-    return ret
-
-
-# Run async subprocess, dismiss output and return returncode
-async def run_devnull(*args):
-    proc = await asyncio.create_subprocess_exec(*args)
-    ret = await proc.wait()
-    return ret
+    return SubprocessResult(ret, "", "")
 
 
 def log_request(method_name: str, request: Any):
@@ -113,15 +158,15 @@ class NodeServicer(csi_grpc.NodeBase):
         if request is None:
             raise ValueError("NodePublishVolumeRequest is None")
 
+        log_request("NodePublishVolume", request)
+
         expr = request.volume_context.get("expr")
         if expr is None:
-            log_request("NodePublishVolume", request)
             raise Exception("Couldn't find expression")
 
         logger.info(f"Requested to build\n{expr}")
 
-        root_name = md5(request.target_path)
-        gcPath = NIX_GCROOTS.joinpath(root_name)
+        root_name = request.volume_id
 
         expressionFile = Path(tempfile.mktemp(suffix=".nix"))
         expressionFile.write_text(expr)
@@ -135,7 +180,7 @@ class NodeServicer(csi_grpc.NodeBase):
             "--raw",
             "--impure",
             "--file",
-            str(expressionFile),
+            expressionFile,
         )
         if eval.returncode != 0:
             raise Exception("Evaluation failed")
@@ -146,17 +191,17 @@ class NodeServicer(csi_grpc.NodeBase):
             "build",
             "--impure",
             "--out-link",
-            str(gcPath),
+            gcPath,
             "--file",
-            str(expressionFile),
+            expressionFile,
         )
-        if build != 0:
+        if build.returncode != 0:
             raise Exception("Build failed")
 
         # Get the resulting storepath
         packagePath = Path(eval.stdout)
 
-        fakeRoot = NIX_ROOT.joinpath(root_name)
+        fakeRoot = CSI_VOLUMES.joinpath(root_name)
         nixCsiPrefix = fakeRoot.joinpath("nix")
         packageResultPath = nixCsiPrefix.joinpath("var/result")
         # Capitalized to emphasise they're Nix environment variables
@@ -168,7 +213,7 @@ class NodeServicer(csi_grpc.NodeBase):
             "nix",
             "path-info",
             "--recursive",
-            str(packagePath),
+            packagePath,
         )
         paths = set(pathInfo.stdout.splitlines())
 
@@ -179,20 +224,25 @@ class NodeServicer(csi_grpc.NodeBase):
         # Copy dependencies to substore, rsync saves a lot of implementation headache
         # here. --archive keeps all attributes, --hard-links hardlinks everything
         # it can while replicating symlinks exactly as they were.
-        rsync = await run_devnull(
-            "rsync", "--archive", "--hard-links", *paths, str(NIX_STORE_DIR)
+        rsync = await run_captured(
+            "rsync",
+            "--one-file-system",
+            "--archive",
+            "--hard-links",
+            *paths,
+            NIX_STORE_DIR,
         )
 
         # Link root derivation to /nix/var/result in the container. This is a "well-know" path
-        ln = await run_devnull(
-            "ln", "--force", "--symbolic", str(packagePath), str(packageResultPath)
+        ln = await run_captured(
+            "ln", "--force", "--symbolic", packagePath, packageResultPath
         )
 
         # Create Nix database
         # This is an execline script that runs nix-store --dump-db | NIX_STATE_DIR=something nix-store --load-db
-        nix_init_db = await run_devnull("nix_init_db", str(NIX_STATE_DIR), *paths)
+        nix_init_db = await run_captured("nix_init_db", NIX_STATE_DIR, *paths)
 
-        if rsync != 0 or ln != 0 or nix_init_db != 0:
+        if rsync.returncode != 0 or ln.returncode != 0 or nix_init_db.returncode != 0:
             # Remove gcroots if we failed something else
             gcPath.unlink(missing_ok=True)
             # Remove what we were working on
@@ -218,16 +268,16 @@ class NodeServicer(csi_grpc.NodeBase):
             # For readonly we use a bind mount, the benefit is that different
             # container stores using bindmounts will get the same inodes and
             # share page cache with others, reducing host storage and memory usage.
-            mount = await run_devnull(
+            mount = await run_console(
                 "mount",
                 "--verbose",
                 "--bind",
                 "-o",
                 "ro",
-                str(sourcePath),
-                str(targetPath),
+                sourcePath,
+                targetPath,
             )
-            if mount != 0:
+            if mount.returncode != 0:
                 raise Exception("Failed to bind mount")
         else:
             # For readwrite we use an overlayfs mount, the benefit here is that
@@ -238,7 +288,7 @@ class NodeServicer(csi_grpc.NodeBase):
             upperdir = parent.joinpath("upperdir")
             workdir.mkdir(parents=True, exist_ok=True)
             upperdir.mkdir(parents=True, exist_ok=True)
-            mount = await run_devnull(
+            mount = await run_console(
                 "mount",
                 "--verbose",
                 "-t",
@@ -246,20 +296,10 @@ class NodeServicer(csi_grpc.NodeBase):
                 "overlay",
                 "-o",
                 f"rw,lowerdir={sourcePath},upperdir={upperdir},workdir={workdir}",
-                str(targetPath),
+                targetPath,
             )
-            if mount != 0:
+            if mount.returncode != 0:
                 raise Exception("Failed to overlayfs mount")
-
-        # Relink nix-csi gcroots to a Path that's removed with the pod
-        await run_devnull(
-            "ln",
-            "--symbolic",
-            "--force",
-            "--no-dereference",
-            str(Path(request.target_path).joinpath("var/result")),
-            str(gcPath),
-        )
 
         reply = csi_pb2.NodePublishVolumeResponse()
         await stream.send_message(reply)
@@ -271,15 +311,23 @@ class NodeServicer(csi_grpc.NodeBase):
         log_request("NodeUnpublishVolume", request)
 
         logger.debug(msg=f"Unmounting {request.target_path}")
-        try:
-            pathMd5 = md5(request.target_path)
-            NIX_GCROOTS.joinpath(pathMd5).unlink()
-            shutil.rmtree(NIX_ROOT.joinpath(pathMd5), True)
-        except Exception as ex:
-            logger.error(ex)
-        umount = await run_devnull("umount", "--verbose", request.target_path)
-        if umount != 0:
+        # Unmount volume
+        if (
+            await run_console("umount", "--verbose", request.target_path)
+        ).returncode != 0:
             logger.error("Failed to umount")
+        # Unlink gcroots
+        try:
+            NIX_GCROOTS.joinpath(request.volume_id).unlink()
+        except Exception as ex:
+            logger.error("Failed to unlink gcroot")
+            logger.error(ex)
+        # Remove hardlink tree
+        try:
+            shutil.rmtree(CSI_VOLUMES.joinpath(request.volume_id))
+        except Exception as ex:
+            logger.error("Failed to remove hardlink tree")
+            logger.error(ex)
 
         reply = csi_pb2.NodeUnpublishVolumeResponse()
         await stream.send_message(reply)
@@ -289,15 +337,7 @@ class NodeServicer(csi_grpc.NodeBase):
         if request is None:
             raise ValueError("NodeGetCapabilitiesRequest is None")
         # log_request("NodeGetCapabilities", request)
-        reply = csi_pb2.NodeGetCapabilitiesResponse(
-            capabilities=[
-                csi_pb2.NodeServiceCapability(
-                    rpc=csi_pb2.NodeServiceCapability.RPC(
-                        type=csi_pb2.NodeServiceCapability.RPC.STAGE_UNSTAGE_VOLUME
-                    )
-                ),
-            ]
-        )
+        reply = csi_pb2.NodeGetCapabilitiesResponse(capabilities=[])
         await stream.send_message(reply)
 
     async def NodeGetInfo(self, stream):
@@ -328,6 +368,13 @@ class NodeServicer(csi_grpc.NodeBase):
 
 
 async def serve():
+    # Clean old volumes on startup
+    boot_cleanup()
+    # Create directories we operate in
+    CSI_ROOT.mkdir(parents=True, exist_ok=True)
+    CSI_VOLUMES.mkdir(parents=True, exist_ok=True)
+    NIX_GCROOTS.mkdir(parents=True, exist_ok=True)
+
     sock_path = "/csi/csi.sock"
     try:
         os.unlink(sock_path)

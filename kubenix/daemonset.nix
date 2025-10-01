@@ -80,6 +80,10 @@
                     mountPath = "/registration";
                   }
                   {
+                    name = "hoststat";
+                    mountPath = "/hoststat";
+                  }
+                  {
                     name = "nix-config";
                     mountPath = "/etc/nix";
                   }
@@ -162,6 +166,13 @@
               {
                 name = "registration-dir";
                 hostPath.path = "/var/lib/kubelet/plugins_registry";
+              }
+              {
+                name = "hoststat";
+                hostPath = {
+                  path = "/proc/stat";
+                  type = "File";
+                };
               }
               {
                 name = "nix-config";
