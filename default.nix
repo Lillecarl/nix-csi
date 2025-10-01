@@ -119,14 +119,32 @@ rec {
   };
 
   copyToContainerd =
-    pkgs.writeScriptBin "copyToContainerd" # fish
+    pkgs.writeScriptBin "copyToContainerd" # execline
       ''
-        #! ${lib.getExe pkgs.fish}
-        set archivedir $(mktemp -d)
-        set --export CONTAINERD_ADDRESS /run/containerd/containerd.sock
-        ${lib.getExe n2c.skopeo-nix2container} --insecure-policy copy nix:${containerImage} oci-archive:$archivedir/archive.tar:docker.io/library/${containerImage.imageRefUnsafe}
-        sudo -E ${lib.getExe pkgs.nerdctl} --namespace k8s.io load --input $archivedir/archive.tar
-        rm -r $archivedir
+        #!${pkgs.execline}/bin/execlineb -P
+
+        # Set up a socket we can write to
+        backtick -E fifo { mktemp -u ocisocket.XXXXXX }
+        foreground { mkfifo $fifo }
+        trap { default { rm ''${fifo} } }
+
+        # Dump image to socket in the background
+        background {
+          # Ignore stdout (since containerd requires sudo and we want a clean prompt)
+          redirfd -w 1 /dev/null
+          ${lib.getExe n2c.skopeo-nix2container}
+            --insecure-policy copy
+            nix:${containerImage}
+            oci-archive:''${fifo}:docker.io/library/${containerImage.imageRefUnsafe}
+        }
+
+        foreground {
+          export CONTAINERD_ADDRESS /run/containerd/containerd.sock
+          sudo ${lib.getExe pkgs.nerdctl}
+            --namespace k8s.io
+            load --input ''${fifo}
+        }
+        rm ''${fifo}
       '';
 
   # simpler than devshell
