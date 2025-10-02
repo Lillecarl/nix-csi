@@ -48,11 +48,11 @@ rec {
       modules = [
         {
           config = {
-            services.boot.depends-on-d = [ "nix-csi" ];
+            services.boot.depends-on = [ "nix-csi" ];
             services.nix-csi = {
               command = lib.getExe nix-csi;
               options = [ "shares-console" ];
-              depends-on-d = [ "runtimedirs" ];
+              depends-on = [ "runtimedirs" ];
             };
             services.runtimedirs = {
               type = "scripted";

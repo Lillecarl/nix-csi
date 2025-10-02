@@ -26,7 +26,7 @@ let
         {
           config = {
             name = "dinixinit";
-            services.boot.depends-on-d = [ "setup" ];
+            services.boot.depends-on = [ "setup" ];
             services.setup = {
               type = "scripted";
               command = lib.getExe (
