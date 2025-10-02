@@ -2,36 +2,49 @@
 # using copyToRoot but it's easy to shoot yourself in the foot with Kubernetes
 # mounting it's own shit over those paths making a mess out of your life.
 {
-  lib,
-  writeScriptBin,
-  dockerTools,
-  buildEnv,
-  buildImage,
-  rsync,
+  pkgs ? import <nixpkgs> {},
   dinixEval,
-  lixStatic,
-  git,
-  uutils-coreutils-noprefix,
-  util-linux,
-
-  nixUserGroupShadow,
-  fish,
+  buildImage # nix2container
 }:
 let
+  lib = pkgs.lib;
   fishDinitLauncher =
-    writeScriptBin "fishDinitLauncher" # fish
+    pkgs.writeScriptBin "fishDinitLauncher" # fish
       ''
-        #! ${lib.getExe fish}
+        #! ${lib.getExe pkgs.fish}
         mkdir -p /run
         exec ${lib.getExe dinixEval.config.dinitLauncher} --container
       '';
   initCopy =
-    writeScriptBin "initCopy" # fish
+    pkgs.writeScriptBin "initCopy" # fish
       ''
-        #! ${lib.getExe fish}
-        exec ${lib.getExe rsync} --verbose --archive --ignore-existing --one-file-system /nix/ /nix2/
+        #! ${lib.getExe pkgs.fish}
+        exec ${lib.getExe pkgs.rsync} --verbose --archive --ignore-existing --one-file-system /nix/ /nix2/
       '';
-  rootEnv = buildEnv {
+  nixUserGroupShadow =
+    let
+      shell = lib.getExe pkgs.fish;
+    in
+    ((import ../dockerUtils.nix pkgs).nonRootShadowSetup {
+      users = [
+        {
+          name = "root";
+          id = 0;
+          inherit shell;
+        }
+        {
+          name = "nix";
+          id = 1000;
+          inherit shell;
+        }
+        {
+          name = "nixbld";
+          id = 1001;
+          inherit shell;
+        }
+      ];
+    });
+  rootEnv = pkgs.buildEnv {
     name = "rootEnv";
     paths = rootPaths;
   };
@@ -39,13 +52,13 @@ let
     initCopy
     fishDinitLauncher
     dinixEval.config.package
-    rsync
-    util-linux
-    lixStatic
-    git
-    fish
-    uutils-coreutils-noprefix
-    dockerTools.caCertificates
+    pkgs.rsync
+    pkgs.util-linux
+    pkgs.lixStatic
+    pkgs.git
+    pkgs.fish
+    pkgs.uutils-coreutils-noprefix
+    pkgs.dockerTools.caCertificates
     nixUserGroupShadow
   ];
 in
@@ -61,6 +74,7 @@ buildImage {
       "USER=nix"
       "HOME=/nix/var/nix-csi/home"
       "PATH=/bin"
+      "NIX_PATH=nixpkgs=${pkgs.path}"
     ];
     Entrypoint = [ (lib.getExe fishDinitLauncher) ];
     WorkingDir = "/home/nix-csi";

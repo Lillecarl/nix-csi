@@ -54,10 +54,6 @@
                     name = "KUBE_NODE_NAME";
                     valueFrom.fieldRef.fieldPath = "spec.nodeName";
                   }
-                  {
-                    name = "NIX_PATH";
-                    value = "nixos-unstable=/etc/nixpaths/nixos-unstable";
-                  }
                 ];
                 volumeMounts = [
                   {

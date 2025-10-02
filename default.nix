@@ -1,10 +1,11 @@
 {
+  # Do a dance where we try to use NIX_PATH if it exists.
   pkgs ?
     let
       ft = import (builtins.fetchTree {
         type = "github";
-        repo = "nixpkgs";
         owner = "NixOS";
+        repo = "nixpkgs";
         ref = "nixos-unstable";
       }) { };
       np = import <nixpkgs> { };
@@ -17,16 +18,20 @@ let
 
   # kubenix is only published as a flake :(
   flake-compatish = import (
-    builtins.fetchGit {
-      url = "https://github.com/lillecarl/flake-compatish.git";
+    builtins.fetchTree {
+      type = "github";
+      owner = "lillecarl";
+      repo = "flake-compatish";
       ref = "main";
     }
   );
   flake = flake-compatish ./.;
 
   n2cSrc = builtins.fetchTree {
-    type = "git";
-    url = "https://github.com/nlewo/nix2container.git";
+    type = "github";
+    owner = "nlewo";
+    repo = "nix2container";
+    ref = "master";
   };
 in
 rec {
@@ -55,32 +60,9 @@ rec {
   manifestYAML = kubenixEval.config.kubernetes.resultYAML;
   manifestJSON = kubenixEval.config.kubernetes.result;
 
-  nixUserGroupShadow =
-    let
-      shell = lib.getExe pkgs.fish;
-    in
-    ((import ./nix/dockerUtils.nix pkgs).nonRootShadowSetup {
-      users = [
-        {
-          name = "root";
-          id = 0;
-          inherit shell;
-        }
-        {
-          name = "nix";
-          id = 1000;
-          inherit shell;
-        }
-        {
-          name = "nixbld";
-          id = 1001;
-          inherit shell;
-        }
-      ];
-    });
   # script to build container image
-  containerImage = pkgs.callPackage ./nix/pkgs/containerimage.nix {
-    inherit dinixEval nixUserGroupShadow;
+  containerImage = import ./nix/pkgs/containerimage.nix {
+    inherit dinixEval;
     inherit (n2c.nix2container) buildImage;
   };
 
