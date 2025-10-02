@@ -1,17 +1,13 @@
 { config, lib, ... }:
 {
   config = {
-    kubernetes.resources.configMaps.nixos-unstable = {
+    kubernetes.resources.configMaps.nix-config = {
       metadata.namespace = config.namespace;
-      data."default.nix" = # nix
-        ''
-          import (builtins.fetchTree {
-            type = "github";
-            repo = "nixpkgs";
-            owner = "NixOS";
-            ref = "nixos-unstable";
-          }).outPath
-        '';
+      data."nix.conf" = ''
+        build-users-group = root
+        auto-allocate-uids = true
+        experimental-features = nix-command flakes auto-allocate-uids fetch-closure
+      '';
     };
     kubernetes.api.resources.daemonSets."nix-csi-node" = {
       metadata.namespace = config.namespace;
@@ -81,10 +77,6 @@
                   {
                     name = "nix-config";
                     mountPath = "/etc/nix";
-                  }
-                  {
-                    name = "nixdev";
-                    mountPath = "/nixdev";
                   }
                 ];
               }
@@ -172,17 +164,6 @@
               {
                 name = "nix-config";
                 configMap.name = "nix-config";
-              }
-              {
-                name = "nixos-unstable";
-                configMap.name = "nixos-unstable";
-              }
-              {
-                name = "nixdev";
-                hostPath = {
-                  path = "/home/lillecarl/Code/nix-csi";
-                  type = "Directory";
-                };
               }
             ];
           };

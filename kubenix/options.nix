@@ -1,10 +1,14 @@
 { lib, ... }:
+let
+  nsVar = builtins.getEnv "CSINS";
+  nsFromEnv = if builtins.stringLength nsVar > 0 then nsVar else "default";
+in
 {
   options = {
     namespace = lib.mkOption {
       description = "Which namespace to deploy cknix resources too";
       type = lib.types.str;
-      default = "default";
+      default = nsFromEnv;
     };
     image = lib.mkOption {
       type = lib.types.str;

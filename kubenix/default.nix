@@ -8,12 +8,8 @@
     ./options.nix
     ./namespace.nix
     ./daemonset.nix
-    ./crd.nix
     ./csidriver.nix
     ./storageclass.nix
-    ./clusterRoleBinding.nix
-    ./serviceAccount.nix
-    ./customResourceAttrs.nix
-    ./tmpDeploy.nix
+    ./testDeploy.nix
   ];
 }

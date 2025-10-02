@@ -9,9 +9,7 @@ in
 {
   config = lib.mkIf (namespace != "default") {
     kubernetes.api.resources.namespaces.${namespace} = {
-      metadata = {
-        name = namespace;
-      };
+      metadata.name = namespace;
     };
   };
 }
