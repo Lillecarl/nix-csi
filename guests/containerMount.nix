@@ -50,7 +50,7 @@ pkgs.buildEnv {
   paths = with pkgs; [
     curl
     coreutils
-    fish
+    (fish.override { usePython = false; })
     execline
     lixStatic
     dinixEval.config.package

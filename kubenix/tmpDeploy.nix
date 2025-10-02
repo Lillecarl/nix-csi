@@ -29,25 +29,12 @@ in
             containers.this = {
               command = [
                 "/nix/var/result/bin/dinixinit"
-                # "/nix/var/result/init"
-                # "-c"
-                # "sleep infinity"
               ];
               image = "dramforever/scratch@sha256:adf10351862ad5351ac2e714e04a0afb020b9df658ac99a07cbf49c0e18f8e43";
-              # command = [
-              #   "tail"
-              #   "-f"
-              #   "/dev/null"
-              # ];
-              # image = "ubuntu:latest";
               env = [
                 {
                   name = "PATH";
                   value = "/nix/var/result/bin";
-                }
-                {
-                  name = "FISH_UNIT_TESTS_RUNNING";
-                  value = "1";
                 }
               ];
               volumeMounts = [
