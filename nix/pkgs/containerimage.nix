@@ -9,7 +9,7 @@
   buildImage,
   rsync,
   dinixEval,
-  lix,
+  lixStatic,
   git,
   uutils-coreutils-noprefix,
   util-linux,
@@ -41,7 +41,7 @@ let
     dinixEval.config.package
     rsync
     util-linux
-    lix
+    lixStatic
     git
     fish
     uutils-coreutils-noprefix
