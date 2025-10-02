@@ -28,13 +28,12 @@ in
           spec = {
             containers.this = {
               command = [
-                "/nix/var/result/bin/tini"
-                "/nix/var/result/bin/init"
+                "/nix/var/result/bin/dinixinit"
                 # "/nix/var/result/init"
                 # "-c"
                 # "sleep infinity"
               ];
-              image = "dramforever/scratch:latest";
+              image = "dramforever/scratch@sha256:adf10351862ad5351ac2e714e04a0afb020b9df658ac99a07cbf49c0e18f8e43";
               # command = [
               #   "tail"
               #   "-f"
