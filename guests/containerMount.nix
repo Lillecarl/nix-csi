@@ -25,6 +25,7 @@ let
       modules = [
         {
           config = {
+            name = "dinixinit";
             services.boot.depends-on-d = [ "setup" ];
             services.setup = {
               type = "scripted";
@@ -54,10 +55,6 @@ pkgs.buildEnv {
     execline
     lixStatic
     dinixEval.config.package
-    (pkgs.writeScriptBin "dinixinit" ''
-      #! ${lib.getExe' pkgs.execline "execlineb"}
-      foreground { mkdir -p /run }
-      exec ${lib.getExe dinixEval.config.dinitLauncher} --container
-    '')
+    dinixEval.config.containerLauncher
   ];
 }

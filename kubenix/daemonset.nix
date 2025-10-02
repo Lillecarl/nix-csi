@@ -44,11 +44,6 @@
               {
                 name = "nix-csi-node";
                 image = config.image;
-                # command = [
-                #   "tail"
-                #   "-f"
-                #   "/dev/null"
-                # ];
                 securityContext.privileged = true;
                 env = [
                   {
