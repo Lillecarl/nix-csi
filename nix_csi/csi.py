@@ -194,7 +194,7 @@ class NodeServicer(csi_grpc.NodeBase):
             )
             if eval.returncode != 0:
                 raise GRPCError(
-                    Status.INVALID_ARGUMENT, f"Nix evaluation failed: {eval.stderr}"
+                    Status.INVALID_ARGUMENT, f"Nix evaluation failed:\nstdout: {eval.stdout}\nstderr: {eval.stderr}"
                 )
 
             # Build, stream to console
@@ -210,6 +210,8 @@ class NodeServicer(csi_grpc.NodeBase):
             if build.returncode != 0:
                 raise GRPCError(Status.ABORTED, "Nix build failed")
 
+        except Exception as ex:
+            raise ex
         finally:
             expressionFile.unlink(missing_ok=True)
 
