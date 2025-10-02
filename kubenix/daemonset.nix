@@ -16,6 +16,10 @@
     kubernetes.api.resources.daemonSets."nix-csi-node" = {
       metadata.namespace = config.namespace;
       spec = {
+        updateStrategy = {
+          type = "RollingUpdate";
+          rollingUpdate.maxUnavailable = 1;
+        };
         selector.matchLabels.app = "nix-csi-node";
         template = {
           metadata.labels.app = "nix-csi-node";
