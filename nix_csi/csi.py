@@ -3,7 +3,6 @@ import os
 import socket
 import shutil
 import tempfile
-import hashlib
 import asyncio
 import sys
 import shlex
@@ -111,10 +110,6 @@ async def run_console(*args):
 
 def log_request(method_name: str, request: Any):
     logger.info("Received %s:\n%s", method_name, request)
-
-
-def md5(text: str):
-    return hashlib.md5(text.encode()).hexdigest()
 
 
 class IdentityServicer(csi_grpc.IdentityBase):
