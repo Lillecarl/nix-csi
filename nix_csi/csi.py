@@ -20,6 +20,8 @@ logger = logging.getLogger("nix-csi")
 CSI_PLUGIN_NAME = "nix.csi.store"
 CSI_VENDOR_VERSION = "0.1.0"
 
+MOUNT_ALREADY_MOUNTED = 32
+
 KUBE_NODE_NAME = os.environ.get("KUBE_NODE_NAME")
 if KUBE_NODE_NAME is None:
     raise Exception("Please make sure KUBE_NODE_NAME is set")
@@ -27,7 +29,7 @@ if KUBE_NODE_NAME is None:
 # Paths we base everything on. Remember that these are CSI pod paths not
 # node paths.
 CSI_ROOT = Path("/nix/var/nix-csi")
-CSI_VOLUMES = CSI_ROOT.joinpath("volumes")
+CSI_VOLUMES = CSI_ROOT / "volumes"
 NIX_GCROOTS = Path("/nix/var/nix/gcroots/nix-csi")
 
 
@@ -44,7 +46,7 @@ def should_cleanup_mounts() -> bool:
     """Check if system rebooted since last run."""
     current_boot = get_kernel_boot_time()
 
-    state_file = CSI_ROOT.joinpath("boottime")
+    state_file = CSI_ROOT / "boottime"
 
     if not state_file.exists():
         state_file.write_text(str(current_boot))
@@ -155,53 +157,71 @@ class NodeServicer(csi_grpc.NodeBase):
 
         log_request("NodePublishVolume", request)
 
+        targetPath = Path(request.target_path)
+
+        # Check if already mounted (idempotency)
+        check_mount = await run_captured("mountpoint", "-q", targetPath)
+        if check_mount.returncode == 0:
+            logger.info(
+                f"Volume {request.volume_id} already mounted at {targetPath}"
+            )
+            reply = csi_pb2.NodePublishVolumeResponse()
+            await stream.send_message(reply)
+            return
+
         expr = request.volume_context.get("expr")
         if expr is None:
-            raise Exception("Couldn't find expression")
+            raise GRPCError(Status.INVALID_ARGUMENT, "Missing 'expr' in volume_context")
 
         logger.info(f"Requested to build\n{expr}")
 
         root_name = request.volume_id
 
         expressionFile = Path(tempfile.mktemp(suffix=".nix"))
-        expressionFile.write_text(expr)
+        try:
+            expressionFile.write_text(expr)
 
-        gcPath = NIX_GCROOTS.joinpath(root_name)
+            gcPath = NIX_GCROOTS / root_name
 
-        # Get outPath from eval
-        eval = await run_captured(
-            "nix",
-            "eval",
-            "--raw",
-            "--impure",
-            "--file",
-            expressionFile,
-        )
-        if eval.returncode != 0:
-            raise Exception("Evaluation failed")
+            # Get outPath from eval
+            eval = await run_captured(
+                "nix",
+                "eval",
+                "--raw",
+                "--impure",
+                "--file",
+                expressionFile,
+            )
+            if eval.returncode != 0:
+                raise GRPCError(
+                    Status.INVALID_ARGUMENT, f"Nix evaluation failed: {eval.stderr}"
+                )
 
-        # Build, stream to console
-        build = await run_console(
-            "nix",
-            "build",
-            "--impure",
-            "--out-link",
-            gcPath,
-            "--file",
-            expressionFile,
-        )
-        if build.returncode != 0:
-            raise Exception("Build failed")
+            # Build, stream to console
+            build = await run_console(
+                "nix",
+                "build",
+                "--impure",
+                "--out-link",
+                gcPath,
+                "--file",
+                expressionFile,
+            )
+            if build.returncode != 0:
+                raise GRPCError(Status.ABORTED, "Nix build failed")
+
+        finally:
+            expressionFile.unlink(missing_ok=True)
 
         # Get the resulting storepath
         packagePath = Path(eval.stdout)
 
-        fakeRoot = CSI_VOLUMES.joinpath(root_name)
-        nixCsiPrefix = fakeRoot.joinpath("nix")
-        packageResultPath = nixCsiPrefix.joinpath("var/result")
+        fakeRoot = CSI_VOLUMES / root_name
+        nixCsiPrefix = fakeRoot / "nix"
+        packageResultPath = nixCsiPrefix / "var/result"
         # Capitalized to emphasise they're Nix environment variables
-        NIX_STATE_DIR = nixCsiPrefix.joinpath("var/nix")
-        NIX_STORE_DIR = nixCsiPrefix.joinpath("store")
+        NIX_STATE_DIR = nixCsiPrefix / "var/nix"
+        NIX_STORE_DIR = nixCsiPrefix / "store"
 
         # Get dependency paths
         pathInfo = await run_captured(
@@ -242,23 +262,12 @@ class NodeServicer(csi_grpc.NodeBase):
             gcPath.unlink(missing_ok=True)
             # Remove what we were working on
             shutil.rmtree(fakeRoot, True)
-            raise Exception("Linking or database initialization failed")
+            raise GRPCError(Status.INTERNAL, "Failed to prepare volume filesystem")
 
-        if fakeRoot is None:
-            error = "Unable to build fakeStore"
-            logger.error(msg=error)
-            raise GRPCError(
-                Status.INTERNAL,
-                error,
-            )
+        sourcePath = fakeRoot / "nix"
 
-        expressionFile.unlink(missing_ok=True)
-
-        sourcePath = fakeRoot.joinpath("nix")
-        targetPath = Path(request.target_path)
-
-        logger.debug(msg=f"Mounting {fakeRoot}/nix on {request.target_path}")
-        Path(request.target_path).mkdir(parents=True, exist_ok=True)
+        logger.debug(msg=f"Mounting {fakeRoot}/nix on {targetPath}")
+        targetPath.mkdir(parents=True, exist_ok=True)
         if request.readonly:
             # For readonly we use a bind mount, the benefit is that different
             # container stores using bindmounts will get the same inodes and
@@ -272,15 +281,17 @@ class NodeServicer(csi_grpc.NodeBase):
                 sourcePath,
                 targetPath,
             )
-            if mount.returncode != 0:
-                raise Exception("Failed to bind mount")
+            if mount.returncode == MOUNT_ALREADY_MOUNTED:
+                logger.debug(f"Mount target {targetPath} was already mounted")
+            elif mount.returncode != 0:
+                raise GRPCError(Status.INTERNAL, "Failed to bind mount")
         else:
             # For readwrite we use an overlayfs mount, the benefit here is that
             # it works as CoW even if the underlying filesystem doesn't support
             # it, reducing host storage usage.
             parent = targetPath.parent
-            workdir = parent.joinpath("workdir")
-            upperdir = parent.joinpath("upperdir")
+            workdir = parent / "workdir"
+            upperdir = parent / "upperdir"
             workdir.mkdir(parents=True, exist_ok=True)
             upperdir.mkdir(parents=True, exist_ok=True)
             mount = await run_console(
@@ -293,8 +304,10 @@ class NodeServicer(csi_grpc.NodeBase):
                 f"rw,lowerdir={sourcePath},upperdir={upperdir},workdir={workdir}",
                 targetPath,
             )
-            if mount.returncode != 0:
-                raise Exception("Failed to overlayfs mount")
+            if mount.returncode == MOUNT_ALREADY_MOUNTED:
+                logger.debug(f"Mount target {targetPath} was already mounted")
+            elif mount.returncode != 0:
+                raise GRPCError(Status.INTERNAL, "Failed to overlayfs mount")
 
         reply = csi_pb2.NodePublishVolumeResponse()
         await stream.send_message(reply)
@@ -305,24 +318,32 @@ class NodeServicer(csi_grpc.NodeBase):
             raise ValueError("NodeUnpublishVolumeRequest is None")
         log_request("NodeUnpublishVolume", request)
 
-        logger.debug(msg=f"Unmounting {request.target_path}")
-        # Unmount volume
-        if (
-            await run_console("umount", "--verbose", request.target_path)
-        ).returncode != 0:
-            logger.error("Failed to umount")
-        # Unlink gcroots
-        try:
-            NIX_GCROOTS.joinpath(request.volume_id).unlink()
-        except Exception as ex:
-            logger.error("Failed to unlink gcroot")
-            logger.error(ex)
-        # Remove hardlink tree
-        try:
-            shutil.rmtree(CSI_VOLUMES.joinpath(request.volume_id))
-        except Exception as ex:
-            logger.error("Failed to remove hardlink tree")
-            logger.error(ex)
+        errors = []
+        targetPath = Path(request.target_path)
+
+        # Check if mounted first
+        check = await run_captured("mountpoint", "-q", targetPath)
+        if check.returncode == 0:
+            umount = await run_console("umount", "--verbose", targetPath)
+            if umount.returncode != 0:
+                errors.append(f"umount failed with code {umount.returncode}")
+
+        gcroot_path = NIX_GCROOTS / request.volume_id
+        if gcroot_path.exists():
+            try:
+                gcroot_path.unlink()
+            except Exception as ex:
+                errors.append(f"gcroot unlink failed: {ex}")
+
+        volume_path = CSI_VOLUMES / request.volume_id
+        if volume_path.exists():
+            try:
+                shutil.rmtree(volume_path)
+            except Exception as ex:
+                errors.append(f"volume cleanup failed: {ex}")
+
+        if errors:
+            raise GRPCError(Status.INTERNAL, "; ".join(errors))
 
         reply = csi_pb2.NodeUnpublishVolumeResponse()
         await stream.send_message(reply)
@@ -371,10 +392,7 @@ async def serve():
     NIX_GCROOTS.mkdir(parents=True, exist_ok=True)
 
     sock_path = "/csi/csi.sock"
-    try:
-        os.unlink(sock_path)
-    except FileNotFoundError:
-        pass
+    Path(sock_path).unlink(missing_ok=True)
 
     server = Server(
         [
