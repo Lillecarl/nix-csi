@@ -60,7 +60,7 @@ rec {
                 pkgs.writeScriptBin "setupScript" # fish
                   ''
                     #! ${lib.getExe pkgs.fish}
-                    mkdir -p /home/{nix,root}
+                    mkdir -p /nix/var/nix-csi/home
                     mkdir -p /var/{log,lib,cache}
                     mkdir -p /etc
                     mkdir -p /run

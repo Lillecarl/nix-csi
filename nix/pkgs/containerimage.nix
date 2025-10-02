@@ -59,7 +59,7 @@ buildImage {
   config = {
     Env = [
       "USER=nix"
-      "HOME=/home/nix"
+      "HOME=/nix/var/nix-csi/home"
       "PATH=/bin"
     ];
     Entrypoint = [ (lib.getExe fishDinitLauncher) ];
