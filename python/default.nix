@@ -28,10 +28,7 @@ let
 in
 buildPythonApplication {
   inherit pname version;
-  src = lib.fileset.toSource {
-    root = ../..;
-    fileset = (lib.fileset.gitTracked ../..);
-  };
+  src = ./.;
   pyproject = true;
   nativeBuildInputs = [ setuptools-scm ];
   propagatedBuildInputs = [

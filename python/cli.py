@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import argparse
-from . import csi
+import service
 
 
 def parse_args():
@@ -25,7 +25,7 @@ async def async_main():
     loglevel_str = logging.getLevelName(logger.getEffectiveLevel())
     logger.info(f"Current log level: {loglevel_str}")
 
-    await csi.serve()
+    await service.serve()
 
 
 def main():

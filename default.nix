@@ -39,7 +39,7 @@ rec {
     system = builtins.currentSystem;
   };
   csi-proto-python = pkgs.python3Packages.callPackage ./nix/pkgs/csi-proto-python/default.nix { };
-  nix-csi = pkgs.python3Packages.callPackage ./nix/pkgs/nix-csi.nix {
+  nix-csi = pkgs.python3Packages.callPackage ./python {
     inherit csi-proto-python;
   };
   dinixEval = (

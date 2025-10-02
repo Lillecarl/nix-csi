@@ -15,7 +15,10 @@ license = { text = "MIT" }
 dependencies = []
 
 [project.scripts]
-nix-csi = "nix_csi.cli:main"
+nix-csi = "cli:main"
 
 [tool.setuptools.packages.find]
-include = ["nix_csi*"]
+include = ["*"]
+
+[tool.setuptools]
+py-modules = ["cli", "service"]
