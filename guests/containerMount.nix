@@ -1,13 +1,15 @@
 let
   nixpkgs = builtins.fetchTree {
     type = "github";
-    repo = "nixpkgs";
     owner = "NixOS";
+    repo = "nixpkgs";
     ref = "nixos-unstable";
   };
   dinixSrc = builtins.fetchTree {
-    type = "git";
-    url = "https://github.com/Lillecarl/dinix.git";
+    type = "github";
+    owner = "lillecarl";
+    repo = "dinix";
+    ref = "main";
   };
   pkgs = import nixpkgs { };
   lib = pkgs.lib;
