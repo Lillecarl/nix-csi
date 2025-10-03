@@ -8,22 +8,23 @@
 }:
 let
   lib = pkgs.lib;
+  fish = pkgs.fish.override { usePython = false; };
   fishDinitLauncher =
     pkgs.writeScriptBin "fishDinitLauncher" # fish
       ''
-        #! ${lib.getExe pkgs.fish}
+        #! ${lib.getExe fish}
         mkdir -p /run
         exec ${lib.getExe dinixEval.config.dinitLauncher} --container
       '';
   initCopy =
     pkgs.writeScriptBin "initCopy" # fish
       ''
-        #! ${lib.getExe pkgs.fish}
+        #! ${lib.getExe fish}
         exec ${lib.getExe pkgs.rsync} --verbose --archive --ignore-existing --one-file-system /nix/ /nix2/
       '';
   nixUserGroupShadow =
     let
-      shell = lib.getExe pkgs.fish;
+      shell = lib.getExe fish;
     in
     ((import ../dockerUtils.nix pkgs).nonRootShadowSetup {
       users = [
@@ -53,10 +54,10 @@ let
     fishDinitLauncher
     dinixEval.config.package
     pkgs.rsync
-    pkgs.util-linux
-    pkgs.lixStatic
-    pkgs.git
-    pkgs.fish
+    pkgs.util-linuxMinimal
+    pkgs.lix
+    pkgs.gitMinimal
+    fish
     pkgs.uutils-coreutils-noprefix
     pkgs.dockerTools.caCertificates
     nixUserGroupShadow

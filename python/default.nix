@@ -2,7 +2,7 @@
   buildPythonApplication,
   setuptools-scm,
   csi-proto-python, # CSI GRPC bindings
-  util-linux, # mount, umount
+  util-linuxMinimal, # mount, umount
   uutils-coreutils-noprefix, # ln
   rsync, # hardlinking
   execline, # easier "shell" operations than python subprocess API
@@ -36,7 +36,7 @@ buildPythonApplication {
     uutils-coreutils-noprefix
     nix_init_db
     csi-proto-python
-    util-linux
+    util-linuxMinimal
   ];
   meta.mainProgram = "nix-csi";
   passthru = {
