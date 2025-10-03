@@ -20,7 +20,6 @@
         template = {
           metadata.labels.app = "nix-csi-node";
           spec = {
-            serviceAccountName = "nix-csi";
             hostNetwork = true;
             initContainers = [
               {
