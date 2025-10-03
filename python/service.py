@@ -255,6 +255,16 @@ class NodeServicer(csi_grpc.NodeBase):
             "ln", "--force", "--symbolic", packagePath, packageResultPath
         )
 
+        # Link root derivation to /nix/var/result in the container. This is a "well-know" path
+        (NIX_STATE_DIR / "gcroots").mkdir(parents=True, exist_ok=True)
+        ln = await run_captured(
+            "ln",
+            "--force",
+            "--symbolic",
+            "/nix/var/result",
+            NIX_STATE_DIR / "gcroots" / "result",
+        )
+
         # Create Nix database
         # This is an execline script that runs nix-store --dump-db | NIX_STATE_DIR=something nix-store --load-db
         nix_init_db = await run_captured("nix_init_db", NIX_STATE_DIR, *paths)
