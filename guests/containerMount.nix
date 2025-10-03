@@ -52,10 +52,12 @@ pkgs.buildEnv {
   name = "containerEnv";
   paths = with pkgs; [
     curl
-    coreutils
+    uutils-coreutils-noprefix
     (fish.override { usePython = false; })
     execline
-    lixStatic
+    lix
+    gitMinimal
+    ncdu
     dinixEval.config.package
     dinixEval.config.containerLauncher
   ];
