@@ -21,29 +21,6 @@ let
         foreground { mkdir --parents /nix-volume/var/nix/gcroots/nix-csi }
         foreground { ln --symbolic --force --no-dereference /nix-volume/var/result /nix-volume/var/nix/gcroots/nix-csi/result }
       '';
-  nixUserGroupShadow =
-    let
-      shell = lib.getExe fishMinimal;
-    in
-    ((import ../dockerUtils.nix pkgs).nonRootShadowSetup {
-      users = [
-        {
-          name = "root";
-          id = 0;
-          inherit shell;
-        }
-        {
-          name = "nix";
-          id = 1000;
-          inherit shell;
-        }
-        {
-          name = "nixbld";
-          id = 1001;
-          inherit shell;
-        }
-      ];
-    });
   rootEnv = pkgs.buildEnv {
     name = "rootEnv";
     paths = rootPaths;
@@ -58,7 +35,6 @@ let
     fishMinimal
     pkgs.uutils-coreutils-noprefix
     pkgs.dockerTools.caCertificates
-    nixUserGroupShadow
   ];
 in
 nix2container.buildImage {
