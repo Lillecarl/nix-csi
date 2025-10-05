@@ -222,6 +222,7 @@ class NodeServicer(csi_grpc.NodeBase):
             eval = await run_console(
                 "nix",
                 "eval",
+                "--refresh",
                 "--raw",
                 "--impure",
                 "--file",
@@ -237,6 +238,7 @@ class NodeServicer(csi_grpc.NodeBase):
             build = await run_console(
                 "nix",
                 "build",
+                "--refresh",
                 "--impure",
                 "--out-link",
                 gcPath,
