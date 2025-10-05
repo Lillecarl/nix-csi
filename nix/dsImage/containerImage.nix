@@ -2,29 +2,23 @@
 # using copyToRoot but it's easy to shoot yourself in the foot with Kubernetes
 # mounting it's own shit over those paths making a mess out of your life.
 {
-  pkgs ? import <nixpkgs> {},
+  pkgs,
   dinixEval,
-  buildImage # nix2container
+  buildImage, # nix2container
 }:
 let
   lib = pkgs.lib;
-  fish = pkgs.fish.override { usePython = false; };
-  fishDinitLauncher =
-    pkgs.writeScriptBin "fishDinitLauncher" # fish
-      ''
-        #! ${lib.getExe fish}
-        mkdir -p /run
-        exec ${lib.getExe dinixEval.config.dinitLauncher} --container
-      '';
+  fishMinimal = pkgs.fish.override { usePython = false; };
   initCopy =
-    pkgs.writeScriptBin "initCopy" # fish
+    pkgs.writeScriptBin "initCopy" # execline
       ''
-        #! ${lib.getExe fish}
-        exec ${lib.getExe pkgs.rsync} --verbose --archive --ignore-existing --one-file-system /nix/ /nix2/
+        #! ${lib.getExe' pkgs.execline "execlineb"}
+        foreground { rm --recursive --force /nix-volume/var/result }
+        exec ${lib.getExe pkgs.rsync} --verbose --archive --ignore-existing --one-file-system /nix/ /nix-volume/
       '';
   nixUserGroupShadow =
     let
-      shell = lib.getExe fish;
+      shell = lib.getExe fishMinimal;
     in
     ((import ../dockerUtils.nix pkgs).nonRootShadowSetup {
       users = [
@@ -51,13 +45,13 @@ let
   };
   rootPaths = [
     initCopy
-    fishDinitLauncher
+    dinixEval.config.containerLauncher
     dinixEval.config.package
     pkgs.rsync
     pkgs.util-linuxMinimal
     pkgs.lix
     pkgs.gitMinimal
-    fish
+    fishMinimal
     pkgs.uutils-coreutils-noprefix
     pkgs.dockerTools.caCertificates
     nixUserGroupShadow
@@ -73,11 +67,12 @@ buildImage {
   config = {
     Env = [
       "USER=nix"
+      # Set HOME to a persistent path so fetcher cache is persisted
       "HOME=/nix/var/nix-csi/home"
       "PATH=/bin"
       "NIX_PATH=nixpkgs=${pkgs.path}"
     ];
-    Entrypoint = [ (lib.getExe fishDinitLauncher) ];
-    WorkingDir = "/home/nix-csi";
+    Entrypoint = [ (lib.getExe dinixEval.config.containerLauncher) ];
+    WorkingDir = "/nix/var/nix-csi/home";
   };
 }

@@ -10,9 +10,13 @@ in
       type = lib.types.str;
       default = nsFromEnv;
     };
-    image = lib.mkOption {
+    dsImage = lib.mkOption {
       type = lib.types.str;
-      default = "nix-csi:latest";
+      default = "nix-csi-ds:latest";
+    };
+    ssImage = lib.mkOption {
+      type = lib.types.str;
+      default = "nix-csi-ss:latest";
     };
     hostMountPath = lib.mkOption {
       description = "Where on the host to put cknix store";

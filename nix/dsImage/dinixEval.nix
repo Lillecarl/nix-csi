@@ -1,15 +1,12 @@
 {
-  pkgs ? import <nixpkgs> { },
+  pkgs,
+  dinix,
   nix-csi,
 }:
 let
-  dinixSrc = builtins.fetchTree {
-    type = "git";
-    url = "https://github.com/Lillecarl/dinix.git";
-  };
   lib = pkgs.lib;
 in
-import dinixSrc {
+import dinix {
   inherit pkgs;
   modules = [
     {

@@ -10,6 +10,8 @@
     ./daemonset.nix
     ./csidriver.nix
     ./storageclass.nix
+    ./config.nix
+    ./cache.nix
     ./testDeploy.nix
   ];
 }

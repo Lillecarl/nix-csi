@@ -162,9 +162,7 @@ class NodeServicer(csi_grpc.NodeBase):
         # Check if already mounted (idempotency)
         check_mount = await run_captured("mountpoint", "-q", targetPath)
         if check_mount.returncode == 0:
-            logger.info(
-                f"Volume {request.volume_id} already mounted at {targetPath}"
-            )
+            logger.info(f"Volume {request.volume_id} already mounted at {targetPath}")
             reply = csi_pb2.NodePublishVolumeResponse()
             await stream.send_message(reply)
             return
@@ -194,7 +192,8 @@ class NodeServicer(csi_grpc.NodeBase):
             )
             if eval.returncode != 0:
                 raise GRPCError(
-                    Status.INVALID_ARGUMENT, f"Nix evaluation failed:\nstdout: {eval.stdout}\nstderr: {eval.stderr}"
+                    Status.INVALID_ARGUMENT,
+                    f"Nix evaluation failed:\nstdout: {eval.stdout}\nstderr: {eval.stderr}",
                 )
 
             # Build, stream to console
@@ -251,13 +250,13 @@ class NodeServicer(csi_grpc.NodeBase):
         )
 
         # Link root derivation to /nix/var/result in the container. This is a "well-know" path
-        ln = await run_captured(
+        ln1 = await run_captured(
             "ln", "--force", "--symbolic", packagePath, packageResultPath
         )
 
         # Link root derivation to /nix/var/result in the container. This is a "well-know" path
         (NIX_STATE_DIR / "gcroots").mkdir(parents=True, exist_ok=True)
-        ln = await run_captured(
+        ln2 = await run_captured(
             "ln",
             "--force",
             "--symbolic",
@@ -269,12 +268,12 @@ class NodeServicer(csi_grpc.NodeBase):
         # This is an execline script that runs nix-store --dump-db | NIX_STATE_DIR=something nix-store --load-db
         nix_init_db = await run_captured("nix_init_db", NIX_STATE_DIR, *paths)
 
-        if rsync.returncode != 0 or ln.returncode != 0 or nix_init_db.returncode != 0:
+        if rsync.returncode != 0 or ln1.returncode != 0 or ln2.returncode != 0 or nix_init_db.returncode != 0:
             # Remove gcroots if we failed something else
             gcPath.unlink(missing_ok=True)
             # Remove what we were working on
             shutil.rmtree(fakeRoot, True)
-            raise GRPCError(Status.INTERNAL, "Failed to prepare volume filesystem")
+            raise GRPCError(Status.CANCELLED, "Failed to prepare volume filesystem")
 
         sourcePath = fakeRoot / "nix"
 
@@ -296,7 +295,7 @@ class NodeServicer(csi_grpc.NodeBase):
             if mount.returncode == MOUNT_ALREADY_MOUNTED:
                 logger.debug(f"Mount target {targetPath} was already mounted")
             elif mount.returncode != 0:
-                raise GRPCError(Status.INTERNAL, "Failed to bind mount")
+                raise GRPCError(Status.ABORTED, "Failed to bind mount")
         else:
             # For readwrite we use an overlayfs mount, the benefit here is that
             # it works as CoW even if the underlying filesystem doesn't support
@@ -319,7 +318,7 @@ class NodeServicer(csi_grpc.NodeBase):
             if mount.returncode == MOUNT_ALREADY_MOUNTED:
                 logger.debug(f"Mount target {targetPath} was already mounted")
             elif mount.returncode != 0:
-                raise GRPCError(Status.INTERNAL, "Failed to overlayfs mount")
+                raise GRPCError(Status.ABORTED, "Failed to overlayfs mount")
 
         reply = csi_pb2.NodePublishVolumeResponse()
         await stream.send_message(reply)
@@ -355,7 +354,7 @@ class NodeServicer(csi_grpc.NodeBase):
                 errors.append(f"volume cleanup failed: {ex}")
 
         if errors:
-            raise GRPCError(Status.INTERNAL, "; ".join(errors))
+            raise GRPCError(Status.ABORTED, "; ".join(errors))
 
         reply = csi_pb2.NodeUnpublishVolumeResponse()
         await stream.send_message(reply)

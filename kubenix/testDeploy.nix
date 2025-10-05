@@ -1,6 +1,6 @@
 { lib, config, ... }:
 let
-  readOnly = true;
+  readOnly = false;
 in
 {
   config = lib.mkIf (builtins.stringLength (builtins.getEnv "CSITEST") > 0) {
@@ -20,6 +20,7 @@ in
                 "/nix/var/result/bin/dinixinit"
               ];
               image = "dramforever/scratch@sha256:adf10351862ad5351ac2e714e04a0afb020b9df658ac99a07cbf49c0e18f8e43";
+              # image = "ghcr.io/lillecarl/nix-csi/scratch:1.0.0";
               env = [
                 {
                   name = "PATH";
@@ -49,7 +50,7 @@ in
                 csi = {
                   driver = "nix.csi.store";
                   inherit readOnly;
-                  volumeAttributes.expr = builtins.readFile ../guests/containerMount.nix;
+                  volumeAttributes.expr = builtins.readFile ../guests/test.nix;
                   # volumeAttributes.expr = builtins.readFile ../guests/nixNG.nix;
                 };
               }

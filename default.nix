@@ -16,6 +16,8 @@
 let
   lib = pkgs.lib;
 
+  dinix = /home/lillecarl/Code/dinix;
+
   # kubenix is only published as a flake :(
   flake-compatish = import (
     builtins.fetchTree {
@@ -39,12 +41,10 @@ rec {
     inherit pkgs;
     system = builtins.currentSystem;
   };
-  csi-proto-python = pkgs.python3Packages.callPackage ./nix/pkgs/csi-proto-python/default.nix { };
+  csi-proto-python = pkgs.python3Packages.callPackage ./nix/csi-proto-python { };
   nix-csi = pkgs.python3Packages.callPackage ./python {
     inherit csi-proto-python;
   };
-
-  dinixEval = import ./nix/dinitEval.nix { inherit pkgs nix-csi; };
 
   # kubenix evaluation
   kubenixEval = flake.inputs.kubenix.evalModules.${builtins.currentSystem} {
@@ -52,7 +52,7 @@ rec {
       imports = [
         ./kubenix
         {
-          config.image = containerImage.imageRefUnsafe;
+          config.dsImage = dsImage.imageRefUnsafe;
         }
       ];
     };
@@ -60,13 +60,17 @@ rec {
   manifestYAML = kubenixEval.config.kubernetes.resultYAML;
   manifestJSON = kubenixEval.config.kubernetes.result;
 
-  # script to build container image
-  containerImage = import ./nix/pkgs/containerimage.nix {
-    inherit dinixEval;
+  # dinix evaluation for daemonset
+  dsDinix = import ./nix/dsImage/dinixEval.nix { inherit pkgs dinix nix-csi; };
+  # script to build daemonset image
+  dsImage = import ./nix/dsImage {
+    inherit pkgs dinix nix-csi;
     inherit (n2c.nix2container) buildImage;
   };
+  dsImageCopy = copyToContainerd dsImage;
 
   copyToContainerd =
+    image:
     pkgs.writeScriptBin "copyToContainerd" # execline
       ''
         #!${pkgs.execline}/bin/execlineb -P
@@ -82,13 +86,13 @@ rec {
           redirfd -w 1 /dev/null
           ${lib.getExe n2c.skopeo-nix2container}
             --insecure-policy copy
-            nix:${containerImage}
-            oci-archive:''${fifo}:docker.io/library/${containerImage.imageRefUnsafe}
+            nix:${image}
+            oci-archive:''${fifo}:docker.io/library/${image.imageRefUnsafe}
         }
+        export CONTAINERD_ADDRESS /run/k3s/containerd/containerd.sock
 
         foreground {
-          export CONTAINERD_ADDRESS /run/containerd/containerd.sock
-          sudo ${lib.getExe pkgs.nerdctl}
+          sudo -E ${lib.getExe pkgs.nerdctl}
             --namespace k8s.io
             load --input ''${fifo}
         }
