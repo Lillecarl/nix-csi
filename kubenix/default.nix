@@ -12,6 +12,5 @@
     ./storageclass.nix
     ./config.nix
     ./cache.nix
-    ./testDeploy.nix
   ];
 }
