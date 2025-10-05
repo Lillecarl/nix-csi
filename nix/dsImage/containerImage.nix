@@ -16,9 +16,10 @@ let
         # Link rootEnv to /nix/var/result
         foreground { mkdir --parents /nix-volume/var }
         foreground { ln --symbolic --force --no-dereference ${rootEnv} /nix-volume/var/result }
-        # Add gcroot for result
+        # Add gcroot for result, /nix/var/result will be available in the
+        # runtime container.
         foreground { mkdir --parents /nix-volume/var/nix/gcroots/nix-csi }
-        foreground { ln --symbolic --force --no-dereference /nix-volume/var/result /nix-volume/var/nix/gcroots/nix-csi/result }
+        foreground { ln --symbolic --force --no-dereference /nix/var/result /nix-volume/var/nix/gcroots/nix-csi/result }
       '';
   rootEnv = pkgs.buildEnv {
     name = "rootEnv";
@@ -37,6 +38,7 @@ let
 in
 nix2container.buildImage {
   name = "nix-csi";
+  initializeNixDatabase = true;
   config = {
     Env = [
       "PATH=${rootEnv}/bin"
