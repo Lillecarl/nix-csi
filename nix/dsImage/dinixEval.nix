@@ -37,7 +37,7 @@ import dinix {
       config = {
         services.boot.depends-on = [ "nix-csi" ];
         services.nix-csi = {
-          command = lib.getExe nix-csi;
+          command = "${lib.getExe nix-csi} --loglevel DEBUG";
           options = [ "shares-console" ];
           depends-on = [ "setup" ];
         };
