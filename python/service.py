@@ -219,7 +219,7 @@ class NodeServicer(csi_grpc.NodeBase):
             gcPath = NIX_GCROOTS / root_name
 
             # Get outPath from eval
-            eval = await run_console(
+            eval = await run_captured(
                 "nix",
                 "eval",
                 "--raw",
@@ -230,7 +230,7 @@ class NodeServicer(csi_grpc.NodeBase):
             if eval.returncode != 0:
                 raise NixCsiError(
                     Status.INVALID_ARGUMENT,
-                    f"nix eval failed: {eval.returncode=} {eval.stderr=}",
+                    f"nix eval failed: {eval.returncode=} {eval.combined=}",
                 )
 
             # Build, stream to console
