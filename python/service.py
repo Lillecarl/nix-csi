@@ -126,7 +126,7 @@ async def run_console(*args, log_level: int = logging.DEBUG):
             decoded = line.decode()
             buffer.append(decoded)
             combined_data.append(decoded)
-            logger.log(log_level, decoded.rstrip("\n"))
+            logger.log(log_level, decoded.strip())
 
     await asyncio.gather(
         stream_output(proc.stdout, stdout_data),
@@ -219,7 +219,7 @@ class NodeServicer(csi_grpc.NodeBase):
             gcPath = NIX_GCROOTS / root_name
 
             # Get outPath from eval
-            eval = await run_captured(
+            eval = await run_console(
                 "nix",
                 "eval",
                 "--raw",
@@ -310,7 +310,7 @@ class NodeServicer(csi_grpc.NodeBase):
                     f"ln1 failed {ln1.returncode=} {ln1.stdout=} {ln1.stderr=}",
                 )
 
-            # Link root derivation to /nix/var/result in the container. This is a "well-know" path
+            # gcroots
             (NIX_STATE_DIR / "gcroots").mkdir(parents=True, exist_ok=True)
             ln2 = await run_captured(
                 "ln",
