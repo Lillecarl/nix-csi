@@ -125,10 +125,10 @@ async def run_console(*args, log_level: int = logging.DEBUG):
 
     async def stream_output(stream, buffer):
         async for line in stream:
-            decoded = line.decode()
+            decoded = line.decode().strip()
             buffer.append(decoded)
             combined_data.append(decoded)
-            logger.log(log_level, decoded.strip())
+            logger.log(log_level, decoded)
 
     await asyncio.gather(
         stream_output(proc.stdout, stdout_data),
@@ -139,9 +139,9 @@ async def run_console(*args, log_level: int = logging.DEBUG):
     assert proc.returncode is not None
     return SubprocessResult(
         proc.returncode,
-        "".join(stdout_data).strip(),
-        "".join(stderr_data).strip(),
-        "".join(combined_data).strip(),
+        "\n".join(stdout_data).strip(),
+        "\n".join(stderr_data).strip(),
+        "\n".join(combined_data).strip(),
         time.perf_counter() - start_time,
     )
 
@@ -399,24 +399,25 @@ class NodeServicer(csi_grpc.NodeBase):
         await stream.send_message(reply)
 
         async def copyToCache():
+            # Get derivation from packagePath
             drv = await run_captured("nix-store", "--query", "--deriver", packagePath)
             if drv.returncode != 0:
                 return
 
+            # Get all requisites for derivation (build-time dependencies)
             requisites = await run_captured(
                 "nix-store",
                 "--query",
                 "--requisites",
                 "--include-outputs",
-                drv.stdout.strip(),
+                drv.stdout,
             )
             if requisites.returncode != 0:
                 return
 
+            # Filter away derivation files
             paths = {
-                p
-                for p in requisites.stdout.splitlines()
-                if Path(p).exists() and not p.endswith(".drv")
+                p for p in requisites.stdout.splitlines() if not p.endswith(".drv")
             }
             for _ in range(6):
                 nixCopy = await run_captured(
