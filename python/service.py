@@ -89,19 +89,19 @@ def boot_cleanup():
             NIX_GCROOTS.mkdir(parents=True, exist_ok=True)
 
 
+def log_command(*args, log_level: int):
+    logger.log(
+        log_level,
+        f"Running command: {shlex.join([str(arg) for arg in args])}",
+    )
+
+
 class SubprocessResult(NamedTuple):
     returncode: int
     stdout: str
     stderr: str
     combined: str
     elapsed: float
-
-
-def log_command(*args, log_level: int):
-    logger.log(
-        log_level,
-        f"Running command: {shlex.join([str(arg) for arg in args])}",
-    )
 
 
 # Run async subprocess, capture output and returncode
