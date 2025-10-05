@@ -7,7 +7,7 @@ import asyncio
 import sys
 import shlex
 
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, Optional
 from google.protobuf.wrappers_pb2 import BoolValue
 from grpclib.server import Server
 from grpclib.exceptions import GRPCError
@@ -31,6 +31,23 @@ if KUBE_NODE_NAME is None:
 CSI_ROOT = Path("/nix/var/nix-csi")
 CSI_VOLUMES = CSI_ROOT / "volumes"
 NIX_GCROOTS = Path("/nix/var/nix/gcroots/nix-csi")
+
+
+class OurGRPCError(GRPCError):
+    def __init__(
+        self,
+        status: Status,
+        message: Optional[str] = None,
+        details: Any = None,
+    ) -> None:
+        logger.error(message)
+        super().__init__(status, message, details)
+        #: :py:class:`~grpclib.const.Status` of the error
+        self.status = status
+        #: Error message
+        self.message = message
+        #: Error details
+        self.details = details
 
 
 def get_kernel_boot_time() -> int:
@@ -169,7 +186,9 @@ class NodeServicer(csi_grpc.NodeBase):
 
         expr = request.volume_context.get("expr")
         if expr is None:
-            raise GRPCError(Status.INVALID_ARGUMENT, "Missing 'expr' in volume_context")
+            raise OurGRPCError(
+                Status.INVALID_ARGUMENT, "Missing 'expr' in volume_context"
+            )
 
         logger.info(f"Requested to build\n{expr}")
 
@@ -191,7 +210,7 @@ class NodeServicer(csi_grpc.NodeBase):
                 expressionFile,
             )
             if eval.returncode != 0:
-                raise GRPCError(
+                raise OurGRPCError(
                     Status.INVALID_ARGUMENT,
                     f"Nix evaluation failed:\nstdout: {eval.stdout}\nstderr: {eval.stderr}",
                 )
@@ -207,7 +226,7 @@ class NodeServicer(csi_grpc.NodeBase):
                 expressionFile,
             )
             if build.returncode != 0:
-                raise GRPCError(Status.ABORTED, "Nix build failed")
+                raise OurGRPCError(Status.ABORTED, "Nix build failed")
 
         except Exception as ex:
             raise ex
@@ -237,48 +256,83 @@ class NodeServicer(csi_grpc.NodeBase):
         NIX_STATE_DIR.mkdir(parents=True, exist_ok=True)
         NIX_STORE_DIR.mkdir(parents=True, exist_ok=True)
 
-        # Copy dependencies to substore, rsync saves a lot of implementation headache
-        # here. --archive keeps all attributes, --hard-links hardlinks everything
-        # it can while replicating symlinks exactly as they were.
-        rsync = await run_captured(
-            "rsync",
-            "--one-file-system",
-            "--archive",
-            "--hard-links",
-            *paths,
-            NIX_STORE_DIR,
-        )
+        try:
+            # Copy dependencies to substore, rsync saves a lot of implementation headache
+            # here. --archive keeps all attributes, --hard-links hardlinks everything
+            # it can while replicating symlinks exactly as they were.
+            rsync = await run_captured(
+                "rsync",
+                "--one-file-system",
+                "--archive",
+                "--hard-links",
+                *paths,
+                NIX_STORE_DIR,
+            )
+            if rsync.returncode != 0:
+                raise OurGRPCError(
+                    Status.INTERNAL,
+                    f"""
+rsync failed
+{rsync.returncode=}
+{rsync.stdout=}
+{rsync.stderr=}
+""",
+                )
 
-        # Link root derivation to /nix/var/result in the container. This is a "well-know" path
-        ln1 = await run_captured(
-            "ln", "--force", "--symbolic", packagePath, packageResultPath
-        )
+            # Link root derivation to /nix/var/result in the container. This is a "well-know" path
+            ln1 = await run_captured(
+                "ln", "--force", "--symbolic", packagePath, packageResultPath
+            )
+            if ln1.returncode != 0:
+                raise OurGRPCError(
+                    Status.INTERNAL,
+                    f"""
+ln1 failed
+{ln1.returncode=}
+{ln1.stdout=}
+{ln1.stderr=}
+""",
+                )
 
-        # Link root derivation to /nix/var/result in the container. This is a "well-know" path
-        (NIX_STATE_DIR / "gcroots").mkdir(parents=True, exist_ok=True)
-        ln2 = await run_captured(
-            "ln",
-            "--force",
-            "--symbolic",
-            "/nix/var/result",
-            NIX_STATE_DIR / "gcroots" / "result",
-        )
+            # Link root derivation to /nix/var/result in the container. This is a "well-know" path
+            (NIX_STATE_DIR / "gcroots").mkdir(parents=True, exist_ok=True)
+            ln2 = await run_captured(
+                "ln",
+                "--force",
+                "--symbolic",
+                "/nix/var/result",
+                NIX_STATE_DIR / "gcroots" / "result",
+            )
+            if ln2.returncode != 0:
+                raise OurGRPCError(
+                    Status.INTERNAL,
+                    f"""
+ln2 failed
+{ln2.returncode=}
+{ln2.stdout=}
+{ln2.stderr=}
+""",
+                )
 
-        # Create Nix database
-        # This is an execline script that runs nix-store --dump-db | NIX_STATE_DIR=something nix-store --load-db
-        nix_init_db = await run_captured("nix_init_db", NIX_STATE_DIR, *paths)
-
-        if (
-            rsync.returncode != 0
-            or ln1.returncode != 0
-            or ln2.returncode != 0
-            or nix_init_db.returncode != 0
-        ):
+            # Create Nix database
+            # This is an execline script that runs nix-store --dump-db | NIX_STATE_DIR=something nix-store --load-db
+            nix_init_db = await run_captured("nix_init_db", NIX_STATE_DIR, *paths)
+            if nix_init_db.returncode != 0:
+                raise OurGRPCError(
+                    Status.INTERNAL,
+                    f"""
+nix_init_db failed
+{nix_init_db.returncode=}
+{nix_init_db.stdout=}
+{nix_init_db.stderr=}
+""",
+                )
+        except OurGRPCError as ex:
             # Remove gcroots if we failed something else
             gcPath.unlink(missing_ok=True)
             # Remove what we were working on
             shutil.rmtree(fakeRoot, True)
-            raise GRPCError(Status.CANCELLED, "Failed to prepare volume filesystem")
+            raise ex
 
         sourcePath = fakeRoot / "nix"
 
@@ -300,7 +354,7 @@ class NodeServicer(csi_grpc.NodeBase):
             if mount.returncode == MOUNT_ALREADY_MOUNTED:
                 logger.debug(f"Mount target {targetPath} was already mounted")
             elif mount.returncode != 0:
-                raise GRPCError(Status.ABORTED, "Failed to bind mount")
+                raise OurGRPCError(Status.ABORTED, "Failed to bind mount")
         else:
             # For readwrite we use an overlayfs mount, the benefit here is that
             # it works as CoW even if the underlying filesystem doesn't support
@@ -323,7 +377,7 @@ class NodeServicer(csi_grpc.NodeBase):
             if mount.returncode == MOUNT_ALREADY_MOUNTED:
                 logger.debug(f"Mount target {targetPath} was already mounted")
             elif mount.returncode != 0:
-                raise GRPCError(Status.ABORTED, "Failed to overlayfs mount")
+                raise OurGRPCError(Status.ABORTED, "Failed to overlayfs mount")
 
         reply = csi_pb2.NodePublishVolumeResponse()
         await stream.send_message(reply)
@@ -359,7 +413,7 @@ class NodeServicer(csi_grpc.NodeBase):
                 errors.append(f"volume cleanup failed: {ex}")
 
         if errors:
-            raise GRPCError(Status.ABORTED, "; ".join(errors))
+            raise OurGRPCError(Status.ABORTED, "; ".join(errors))
 
         reply = csi_pb2.NodeUnpublishVolumeResponse()
         await stream.send_message(reply)
@@ -384,19 +438,21 @@ class NodeServicer(csi_grpc.NodeBase):
 
     async def NodeGetVolumeStats(self, stream):
         del stream  # typechecker
-        raise GRPCError(Status.INVALID_ARGUMENT, "NodeGetVolumeStats not implemented")
+        raise OurGRPCError(
+            Status.INVALID_ARGUMENT, "NodeGetVolumeStats not implemented"
+        )
 
     async def NodeExpandVolume(self, stream):
         del stream  # typechecker
-        raise GRPCError(Status.INVALID_ARGUMENT, "NodeExpandVolume not implemented")
+        raise OurGRPCError(Status.INVALID_ARGUMENT, "NodeExpandVolume not implemented")
 
     async def NodeStageVolume(self, stream):
         del stream  # typechecker
-        raise GRPCError(Status.INVALID_ARGUMENT, "NodeStageVolume not implemented")
+        raise OurGRPCError(Status.INVALID_ARGUMENT, "NodeStageVolume not implemented")
 
     async def NodeUnstageVolume(self, stream):
         del stream  # typechecker
-        raise GRPCError(Status.INVALID_ARGUMENT, "NodeUnstageVolume not implemented")
+        raise OurGRPCError(Status.INVALID_ARGUMENT, "NodeUnstageVolume not implemented")
 
 
 async def serve():
