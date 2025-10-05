@@ -25,6 +25,9 @@ async def async_main():
     loglevel_str = logging.getLevelName(logger.getEffectiveLevel())
     logger.info(f"Current log level: {loglevel_str}")
 
+    # Disable hpack logging
+    logging.getLogger("hpack.hpack").setLevel(logging.INFO)
+
     await service.serve()
 
 
