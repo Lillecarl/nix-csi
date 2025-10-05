@@ -39,7 +39,7 @@
           spec = {
             initContainers.populate-nix = {
               name = "populate-nix";
-              image = config.dsImage;
+              image = config.image;
               volumeMounts = [
                 {
                   mountPath = "/nix-volume";

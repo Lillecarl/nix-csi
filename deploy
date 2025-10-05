@@ -9,7 +9,7 @@ if ! test -f ./id_ed25519 || ! test -f ./id_ed25519.pub
     ssh-keygen -t ed25519 -f ./id_ed25519 -C nix-cache -N ""
 end
 # Build DaemonSet containerImage
-nix run --file . dsImageCopy || begin
+nix run --file . imageToContainerd || begin
     echo "DaemonSet image failed"
     return 1
 end

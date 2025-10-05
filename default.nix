@@ -52,7 +52,7 @@ rec {
       imports = [
         ./kubenix
         {
-          config.dsImage = dsImage.imageRefUnsafe;
+          config.image = image.imageRefUnsafe;
         }
       ];
     };
@@ -61,13 +61,13 @@ rec {
   manifestJSON = kubenixEval.config.kubernetes.result;
 
   # dinix evaluation for daemonset
-  dsDinix = import ./nix/dsImage/dinixEval.nix { inherit pkgs dinix nix-csi; };
+  dinixEval = import ./nix/dsImage/dinixEval.nix { inherit pkgs dinix nix-csi; };
   # script to build daemonset image
-  dsImage = import ./nix/dsImage {
+  image = import ./nix/dsImage {
     inherit pkgs dinix nix-csi;
     inherit (n2c) nix2container;
   };
-  dsImageCopy = copyToContainerd dsImage;
+  imageToContainerd = copyToContainerd image;
 
   copyToContainerd =
     image:

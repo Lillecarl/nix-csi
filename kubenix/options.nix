@@ -15,7 +15,7 @@ in
       type = lib.types.bool;
       default = true;
     };
-    dsImage = lib.mkOption {
+    image = lib.mkOption {
       type = lib.types.str;
       default = "nix-csi-ds:latest";
     };
