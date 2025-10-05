@@ -5,6 +5,27 @@
 }:
 let
   lib = pkgs.lib;
+
+  fakeNss = pkgs.buildEnv {
+    name = "fakeNss";
+    paths = [
+      (pkgs.writeTextDir "etc/passwd" # passwd
+        ''
+          root:x:0:0:root user:/nix/var/nix-csi/home:/nix/var/result/nologin
+          nobody:x:65534:65534:nobody:/nix/var/nix-csi/home:/nix/var/result/nologin
+        ''
+      )
+      (pkgs.writeTextDir "etc/group" # group
+        ''
+          root:x:0:
+          nobody:x:65534:
+        ''
+      )
+      (pkgs.writeTextDir "etc/nsswitch.conf" ''
+        hosts: files dns
+      '')
+    ];
+  };
 in
 import dinix {
   inherit pkgs;
@@ -28,8 +49,10 @@ import dinix {
                 importas -S HOME
                 foreground { mkdir --parents /tmp }
                 foreground { mkdir --parents ''${HOME} }
-                foreground { rsync --verbose --archive ${pkgs.dockerTools.fakeNss}/ / }
+                foreground { rsync --verbose --archive ${fakeNss}/ / }
                 foreground { rsync --verbose --archive ${pkgs.dockerTools.caCertificates}/ / }
+                # Tricking OpenSSH's security policies
+                foreground { rsync --archive --copy-links --chmod=600 /etc/sshc/ ''${HOME}/.ssh/ }
               ''
           );
         };

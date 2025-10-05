@@ -10,16 +10,16 @@
     kubernetes.resources.secrets.sshc = lib.mkIf config.enableBinaryCache {
       metadata.namespace = config.namespace;
       stringData = {
-        known_hosts = builtins.readFile ../id_ed25519.pub;
+        # known_hosts = builtins.readFile ../id_ed25519.pub;
         id_ed25519 = builtins.readFile ../id_ed25519;
-        sshd_config = # ssh
+        config = # ssh
           ''
             Host nix-cache
                 HostName nix-cache.${config.namespace}.svc
-                User nix-cache
+                User root
                 Port 22
                 IdentityFile ~/.ssh/id_ed25519
-                # StrictHostKeyChecking accept-new
+                StrictHostKeyChecking accept-new
                 UserKnownHostsFile ~/.ssh/known_hosts
           '';
       };
@@ -102,6 +102,10 @@
                   name = "nix-config";
                   mountPath = "/etc/nix";
                 }
+                {
+                  name = "sshc";
+                  mountPath = "/etc/sshc";
+                }
               ];
             };
             containers.nix-csi-registrar = {
@@ -182,6 +186,10 @@
               {
                 name = "nix-config";
                 configMap.name = "nix-config";
+              }
+              {
+                name = "sshc";
+                secret.secretName = "sshc";
               }
             ];
           };

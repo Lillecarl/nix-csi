@@ -13,6 +13,32 @@ let
   };
   pkgs = import nixpkgs { };
   lib = pkgs.lib;
+  fakeNss = pkgs.buildEnv {
+    name = "fakeNss";
+    paths =
+      let
+        # loginShell = lib.getExe' pkgs.shadow "nologin";
+        loginShell = lib.getExe pkgs.fish;
+      in
+      [
+        (pkgs.writeTextDir "etc/passwd" # passwd
+          ''
+            root:x:0:0:root user:/var/empty:${loginShell}
+            sshd:x:0:0:root user:/var/empty:${loginShell}
+            nobody:x:65534:65534:nobody:/var/empty:${loginShell}
+          ''
+        )
+        (pkgs.writeTextDir "etc/group" # group
+          ''
+            root:x:0:
+            nobody:x:65534:
+          ''
+        )
+        (pkgs.writeTextDir "etc/nsswitch.conf" ''
+          hosts: files dns
+        '')
+      ];
+  };
 
   initCopy =
     pkgs.writeScriptBin "initCopy" # execline
@@ -20,7 +46,7 @@ let
         #! ${lib.getExe' pkgs.execline "execlineb"}
         # Remove result symlink and let rsync overwrite it. This way we get
         # persistence while allowing reconfiguration by relinking a new result.
-        foreground { rm --recursive --force /nix-volume/var/result }
+        foreground { unlink /nix-volume/var/result }
         # rsync nix-csi supplied volume to /nix-volume which will be mounted as
         # /nix in the runtime container.
         ${lib.getExe pkgs.rsync} --archive --ignore-existing --one-file-system /nix/ /nix-volume/
@@ -42,7 +68,8 @@ let
             };
             services.openssh = {
               type = "process";
-              command = "${lib.getExe' pkgs.openssh "sshd"} -D -f /etc/ssh/sshd_config";
+              command = "${lib.getExe' pkgs.openssh "sshd"} -D -f /etc/ssh/sshd_config -e";
+              options = [ "shares-console" ];
               depends-on = [ "setup" ];
             };
             services.nix-serve = {
@@ -60,9 +87,12 @@ let
                     #! ${lib.getExe' pkgs.execline "execlineb"}
                     importas -S HOME
                     foreground { mkdir --parents /tmp }
+                    foreground { mkdir --parents /tmp/log }
                     foreground { mkdir --parents ''${HOME} }
-                    foreground { rsync --verbose --archive ${pkgs.dockerTools.fakeNss}/ / }
+                    foreground { rsync --verbose --archive --copy-links ${fakeNss}/ / }
                     foreground { rsync --verbose --archive ${pkgs.dockerTools.caCertificates}/ / }
+                    # Tricking OpenSSH's security policies
+                    foreground { rsync --archive --copy-links --chmod=600 /etc/ssh-mount/ /etc/ssh/ }
                   ''
               );
             };
@@ -74,16 +104,17 @@ let
 in
 pkgs.buildEnv {
   name = "binary-cache-env";
-  paths = with pkgs; [
+  paths = [
     initCopy
-    rsync
-    curl
-    uutils-coreutils-noprefix
-    (fish.override { usePython = false; })
-    execline
-    lix
-    gitMinimal
-    ncdu
+    pkgs.rsync
+    pkgs.uutils-coreutils-noprefix
+    pkgs.fishMinimal
+    pkgs.gitMinimal
+    pkgs.execline
+    pkgs.lix
+    pkgs.ncdu
+    pkgs.openssh
+    pkgs.curl
     dinixEval.config.package
     dinixEval.config.containerLauncher
   ];

@@ -16,9 +16,14 @@
         sshd_config = # sshd
           ''
             Port 22
+            AddressFamily Any
+
             HostKey /etc/ssh/id_ed25519
 
-            PermitRootLogin no
+            SyslogFacility DAEMON
+            SetEnv PATH=/nix/var/result/bin
+
+            PermitRootLogin prohibit-password
             PubkeyAuthentication yes
             PasswordAuthentication no
             ChallengeResponseAuthentication no
@@ -75,6 +80,10 @@
                   value = "/nix/var/result/bin";
                 }
                 {
+                  name = "HOME";
+                  value = "/var/empty";
+                }
+                {
                   name = "NIX_SECRET_KEY_FILE";
                   value = "/etc/nix-serve/secret";
                 }
@@ -98,6 +107,10 @@
                   name = "nix-serve";
                   mountPath = "/etc/nix-serve";
                 }
+                {
+                  name = "sshd";
+                  mountPath = "/etc/ssh-mount";
+                }
               ];
             };
             volumes = [
@@ -108,6 +121,10 @@
               {
                 name = "nix-serve";
                 secret.secretName = "nix-serve";
+              }
+              {
+                name = "sshd";
+                secret.secretName = "sshd";
               }
               {
                 name = "nix-csi";
@@ -144,6 +161,11 @@
       spec = {
         selector.app = "nix-cache";
         ports = [
+          {
+            port = 22;
+            targetPort = 22;
+            name = "ssh";
+          }
           {
             port = 80;
             targetPort = 80;

@@ -28,6 +28,7 @@ let
   rootPaths = [
     dinixEval.config.containerLauncher
     dinixEval.config.package
+    pkgs.openssh
     pkgs.rsync
     pkgs.lix
     pkgs.util-linuxMinimal
