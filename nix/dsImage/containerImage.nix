@@ -4,7 +4,7 @@
 {
   pkgs,
   dinixEval,
-  buildImage, # nix2container
+  nix2container,
 }:
 let
   lib = pkgs.lib;
@@ -13,8 +13,13 @@ let
     pkgs.writeScriptBin "initCopy" # execline
       ''
         #! ${lib.getExe' pkgs.execline "execlineb"}
-        foreground { rm --recursive --force /nix-volume/var/result }
-        exec ${lib.getExe pkgs.rsync} --verbose --archive --ignore-existing --one-file-system /nix/ /nix-volume/
+        foreground { rsync --verbose --archive --ignore-existing --one-file-system /nix/ /nix-volume/ }
+        # Link rootEnv to /nix/var/result
+        foreground { mkdir --parents /nix-volume/var }
+        foreground { ln --symbolic --force --no-dereference ${rootEnv} /nix-volume/var/result }
+        # Add gcroot for result
+        foreground { mkdir --parents /nix-volume/var/nix/gcroots/nix-csi }
+        foreground { ln --symbolic --force --no-dereference /nix-volume/var/result /nix-volume/var/nix/gcroots/nix-csi/result }
       '';
   nixUserGroupShadow =
     let
@@ -44,7 +49,6 @@ let
     paths = rootPaths;
   };
   rootPaths = [
-    initCopy
     dinixEval.config.containerLauncher
     dinixEval.config.package
     pkgs.rsync
@@ -57,22 +61,17 @@ let
     nixUserGroupShadow
   ];
 in
-buildImage {
+nix2container.buildImage {
   name = "nix-csi";
-  # Links derivation into containers root
-  copyToRoot = rootEnv;
-  # Storepaths to bring into container
-  # layers = rootPaths ++ [ fishDinitLauncher ];
-  # Image configuration
+  layers = [
+    (nix2container.buildLayer {
+      deps = rootPaths;
+    })
+  ];
   config = {
     Env = [
-      "USER=nix"
-      # Set HOME to a persistent path so fetcher cache is persisted
-      "HOME=/nix/var/nix-csi/home"
-      "PATH=/bin"
-      "NIX_PATH=nixpkgs=${pkgs.path}"
+      "PATH=${rootEnv}/bin"
     ];
-    Entrypoint = [ (lib.getExe dinixEval.config.containerLauncher) ];
-    WorkingDir = "/nix/var/nix-csi/home";
+    Entrypoint = [ (lib.getExe initCopy) ];
   };
 }

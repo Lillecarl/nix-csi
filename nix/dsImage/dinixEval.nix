@@ -5,6 +5,30 @@
 }:
 let
   lib = pkgs.lib;
+  fishMinimal = pkgs.fish.override { usePython = false; };
+  nixUserGroupShadow =
+    let
+      shell = lib.getExe fishMinimal;
+    in
+    ((import ../dockerUtils.nix pkgs).nonRootShadowSetup {
+      users = [
+        {
+          name = "root";
+          id = 0;
+          inherit shell;
+        }
+        {
+          name = "nix";
+          id = 1000;
+          inherit shell;
+        }
+        {
+          name = "nixbld";
+          id = 1001;
+          inherit shell;
+        }
+      ];
+    });
 in
 import dinix {
   inherit pkgs;
@@ -15,20 +39,19 @@ import dinix {
         services.nix-csi = {
           command = lib.getExe nix-csi;
           options = [ "shares-console" ];
-          depends-on = [ "runtimedirs" ];
+          depends-on = [ "setup" ];
         };
-        services.runtimedirs = {
+        services.setup = {
           type = "scripted";
+          options = [ "shares-console" ];
           command = lib.getExe (
-            pkgs.writeScriptBin "setupScript" # fish
+            pkgs.writeScriptBin "setup" # execline
               ''
-                #! ${lib.getExe pkgs.fish}
-                mkdir -p /nix/var/nix-csi/home
-                mkdir -p /var/{log,lib,cache}
-                mkdir -p /etc
-                mkdir -p /run
-                mkdir -p /tmp
-                mkdir -p /root
+                #! ${lib.getExe' pkgs.execline "execlineb"}
+                foreground { mkdir --parents /tmp }
+                foreground { mkdir --parents /nix/var/nix-csi/home }
+                foreground { rsync --verbose --archive ${nixUserGroupShadow}/ / }
+                foreground { rsync --verbose --archive ${pkgs.dockerTools.caCertificates}/ / }
               ''
           );
         };

@@ -65,7 +65,7 @@ rec {
   # script to build daemonset image
   dsImage = import ./nix/dsImage {
     inherit pkgs dinix nix-csi;
-    inherit (n2c.nix2container) buildImage;
+    inherit (n2c) nix2container;
   };
   dsImageCopy = copyToContainerd dsImage;
 

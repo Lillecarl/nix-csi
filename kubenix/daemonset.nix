@@ -14,7 +14,6 @@
           spec = {
             initContainers.populate-nix = {
               name = "populate-nix";
-              command = [ "initCopy" ];
               image = config.dsImage;
               volumeMounts = [
                 {
@@ -26,8 +25,9 @@
             };
             containers.nix-csi-node = {
               name = "nix-csi-node";
-              image = config.dsImage;
+              image = "dramforever/scratch@sha256:adf10351862ad5351ac2e714e04a0afb020b9df658ac99a07cbf49c0e18f8e43";
               securityContext.privileged = true;
+              command = [ "dinixLauncher" ];
               env = [
                 {
                   name = "CSI_ENDPOINT";
@@ -36,6 +36,18 @@
                 {
                   name = "KUBE_NODE_NAME";
                   valueFrom.fieldRef.fieldPath = "spec.nodeName";
+                }
+                {
+                  name = "PATH";
+                  value = "/nix/var/result/bin";
+                }
+                {
+                  name = "HOME";
+                  value = "/nix/var/nix-csi/home";
+                }
+                {
+                  name = "USER";
+                  value = "root";
                 }
               ];
               volumeMounts = [
