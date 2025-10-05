@@ -74,6 +74,10 @@
                   name = "USER";
                   value = "root";
                 }
+                {
+                  name = "BUILD_CACHE";
+                  value = lib.boolToString config.enableBinaryCache;
+                }
               ];
               volumeMounts = [
                 {

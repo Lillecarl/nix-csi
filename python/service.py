@@ -395,6 +395,44 @@ class NodeServicer(csi_grpc.NodeBase):
         reply = csi_pb2.NodePublishVolumeResponse()
         await stream.send_message(reply)
 
+        async def copyToCache():
+            drv = await run_captured("nix-store", "--query", "--deriver", packagePath)
+            if drv.returncode != 0:
+                return
+
+            requisites = await run_captured(
+                "nix-store",
+                "--query",
+                "--requisites",
+                "--include-outputs",
+                drv.stdout.strip(),
+            )
+            if requisites.returncode != 0:
+                return
+
+            paths = {
+                p
+                for p in requisites.stdout.splitlines()
+                if Path(p).exists() and not p.endswith(".drv")
+            }
+            for _ in range(6):
+                nixCopy = await run_captured(
+                    "nix", "copy", "--to", "ssh://nix-cache", *paths
+                )
+                if nixCopy.returncode == 0:
+                    logger.info(
+                        f"{len(paths)} paths copied to cache in {nixCopy.elapsed:.2f} seconds"
+                    )
+                    break
+                else:
+                    logger.error(
+                        f"nix copy failed: {nixCopy.returncode=}\n{nixCopy.combined=}"
+                    )
+                await asyncio.sleep(10)
+
+        if os.getenv("BUILD_CACHE") == "true":
+            asyncio.create_task(copyToCache())
+
     async def NodeUnpublishVolume(self, stream):
         request: csi_pb2.NodeUnpublishVolumeRequest | None = await stream.recv_message()
         if request is None:
