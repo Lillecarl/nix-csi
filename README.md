@@ -3,6 +3,15 @@ nix-csi implements a CSI driver that populates a volume with the result of a nix
 
 AKA: A nix-snapshotter clone implemented on the CSI layer rather than the CRI layer.
 
+## How to deploy
+
+```bash
+# Build manifest
+CSINS=nix-csi nix build --file . manifestYAML
+# Inspect manifest
+kubectl apply -f result
+```
+
 ## Highlevel design
 nix-csi is a [CSI](https://github.com/container-storage-interface/spec)
 implementation that implements ephemeral volumes consisting of a fully functional
