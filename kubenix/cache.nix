@@ -1,20 +1,36 @@
-{ config, ... }:
+{ config, lib, ... }:
 {
-  config = {
-    kubernetes.resources.secrets.nix-serve-priv = {
+  config = lib.mkIf config.enableBinaryCache {
+    # Mounts to /etc/nix-serve
+    kubernetes.resources.secrets.nix-serve = {
       metadata.namespace = config.namespace;
-      stringData.cache-secret = builtins.readFile ../cache-secret;
+      stringData.secret = builtins.readFile ../cache-secret;
     };
 
-    kubernetes.resources.secrets.nix-ssh-pub = {
+    # Mounts to /etc/ssh
+    kubernetes.resources.secrets.sshd = {
       metadata.namespace = config.namespace;
-      stringData.authorized_keys = builtins.readFile ../id_ed25519.pub;
-    };
+      stringData = {
+        authorized_keys = builtins.readFile ../id_ed25519.pub;
+        id_ed25519 = builtins.readFile ../id_ed25519;
+        sshd_config = # sshd
+          ''
+            Port 22
+            HostKey /etc/ssh/id_ed25519
 
-    kubernetes.resources.secrets.nix-ssh-priv = {
-      metadata.namespace = config.namespace;
-      stringData."id_ed25519"= builtins.readFile ../id_ed25519;
-      stringData."id_ed25519.pub"= builtins.readFile ../id_ed25519.pub;
+            PermitRootLogin no
+            PubkeyAuthentication yes
+            PasswordAuthentication no
+            ChallengeResponseAuthentication no
+            UsePAM no
+
+            AuthorizedKeysFile /etc/ssh/authorized_keys
+
+            StrictModes no
+
+            Subsystem sftp internal-sftp
+          '';
+      };
     };
 
     kubernetes.resources.statefulSets.nix-cache = {
@@ -62,7 +78,7 @@
                 }
                 {
                   name = "NIX_SECRET_KEY_FILE";
-                  value = "/secrets/cache-secret";
+                  value = "/etc/nix-serve/secret";
                 }
               ];
               ports = [
@@ -81,8 +97,8 @@
                   mountPath = "/nix";
                 }
                 {
-                  name = "signing-key";
-                  mountPath = "/secrets";
+                  name = "nix-serve";
+                  mountPath = "/etc/nix-serve";
                 }
               ];
             };
@@ -92,8 +108,8 @@
                 configMap.name = "nix-config";
               }
               {
-                name = "signing-key";
-                secret.secretName = "nix-serve-priv";
+                name = "nix-serve";
+                secret.secretName = "nix-serve";
               }
               {
                 name = "nix-csi";

@@ -10,13 +10,14 @@ in
       type = lib.types.str;
       default = nsFromEnv;
     };
+    enableBinaryCache = lib.mkOption {
+      description = "Enable deployment of a cluster-internal nix binary cache";
+      type = lib.types.bool;
+      default = true;
+    };
     dsImage = lib.mkOption {
       type = lib.types.str;
       default = "nix-csi-ds:latest";
-    };
-    ssImage = lib.mkOption {
-      type = lib.types.str;
-      default = "nix-csi-ss:latest";
     };
     hostMountPath = lib.mkOption {
       description = "Where on the host to put cknix store";

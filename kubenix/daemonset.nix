@@ -1,6 +1,30 @@
-{ config, lib, ... }:
+{
+  pkgs,
+  config,
+  lib,
+  ...
+}:
 {
   config = {
+    # mounts to /nix/var/nix-csi/home/.ssh
+    kubernetes.resources.secrets.sshc = lib.mkIf config.enableBinaryCache {
+      metadata.namespace = config.namespace;
+      stringData = {
+        known_hosts = builtins.readFile ../id_ed25519.pub;
+        id_ed25519 = builtins.readFile ../id_ed25519;
+        sshd_config = # ssh
+          ''
+            Host nix-cache
+                HostName nix-cache.${config.namespace}.svc
+                User nix-cache
+                Port 22
+                IdentityFile ~/.ssh/id_ed25519
+                # StrictHostKeyChecking accept-new
+                UserKnownHostsFile ~/.ssh/known_hosts
+          '';
+      };
+    };
+
     kubernetes.api.resources.daemonSets."nix-csi-node" = {
       metadata.namespace = config.namespace;
       spec = {

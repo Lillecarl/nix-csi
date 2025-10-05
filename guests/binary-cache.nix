@@ -26,27 +26,6 @@ let
         ${lib.getExe pkgs.rsync} --verbose --archive --ignore-existing --one-file-system /nix/ /nix-volume/
       '';
 
-  sshd_config =
-    pkgs.writeText "sshd_config" # sshd
-      ''
-        # Network
-        Port 22
-        AddressFamily inet
-        ListenAddress 0.0.0.0
-
-        # Authentication
-        PermitRootLogin no
-        PubkeyAuthentication yes
-        PasswordAuthentication no
-        PermitEmptyPasswords no
-        ChallengeResponseAuthentication no
-
-        # Session
-        X11Forwarding no
-        PrintMotd no
-        AcceptEnv LANG LC_*
-      '';
-
   dinixEval = (
     import dinix {
       inherit pkgs;
@@ -57,14 +36,14 @@ let
             services.boot = {
               depends-on = [
                 "setup"
-                "nix-serve-ng"
+                "nix-serve"
               ];
             };
             services.openssh = {
               type = "process";
-              command = "${lib.getExe' pkgs.openssh "sshd"} -D -f ${sshd_config}";
+              command = "${lib.getExe' pkgs.openssh "sshd"} -D -f /etc/ssh/sshd_config";
             };
-            services.nix-serve-ng = {
+            services.nix-serve = {
               type = "process";
               command = "${lib.getExe pkgs.nix-serve-ng} --host * --port 80";
               options = [ "shares-console" ];
