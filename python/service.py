@@ -4,8 +4,8 @@ import socket
 import shutil
 import tempfile
 import asyncio
-import sys
 import shlex
+import time
 
 from typing import Any, NamedTuple, Optional
 from google.protobuf.wrappers_pb2 import BoolValue
@@ -94,6 +94,7 @@ class SubprocessResult(NamedTuple):
     stdout: str
     stderr: str
     combined: str
+    elapsed: float
 
 
 def log_command(*args, log_level: int):
@@ -111,6 +112,7 @@ async def run_captured(*args):
 # Run async subprocess, forward output to console and return returncode
 async def run_console(*args, log_level: int = logging.DEBUG):
     log_command(*args, log_level=log_level)
+    start_time = time.perf_counter()
     proc = await asyncio.create_subprocess_exec(
         *[str(arg) for arg in args],
         stdout=asyncio.subprocess.PIPE,
@@ -140,6 +142,7 @@ async def run_console(*args, log_level: int = logging.DEBUG):
         "".join(stdout_data).strip(),
         "".join(stderr_data).strip(),
         "".join(combined_data).strip(),
+        time.perf_counter() - start_time,
     )
 
 
