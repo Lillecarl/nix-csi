@@ -23,7 +23,7 @@ let
         foreground { rm --recursive --force /nix-volume/var/result }
         # rsync nix-csi supplied volume to /nix-volume which will be mounted as
         # /nix in the runtime container.
-        ${lib.getExe pkgs.rsync} --verbose --archive --ignore-existing --one-file-system /nix/ /nix-volume/
+        ${lib.getExe pkgs.rsync} --archive --ignore-existing --one-file-system /nix/ /nix-volume/
       '';
 
   dinixEval = (

@@ -17,6 +17,7 @@ import dinix {
           options = [ "shares-console" ];
           depends-on = [ "setup" ];
         };
+        # set up root filesystem with paths required for a Linux system to function normally
         services.setup = {
           type = "scripted";
           options = [ "shares-console" ];
@@ -24,8 +25,9 @@ import dinix {
             pkgs.writeScriptBin "setup" # execline
               ''
                 #! ${lib.getExe' pkgs.execline "execlineb"}
+                importas -S HOME
                 foreground { mkdir --parents /tmp }
-                foreground { mkdir --parents /nix/var/nix-csi/home }
+                foreground { mkdir --parents ''${HOME} }
                 foreground { rsync --verbose --archive ${pkgs.dockerTools.fakeNss}/ / }
                 foreground { rsync --verbose --archive ${pkgs.dockerTools.caCertificates}/ / }
               ''

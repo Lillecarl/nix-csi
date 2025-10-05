@@ -12,7 +12,7 @@ let
     pkgs.writeScriptBin "initCopy" # execline
       ''
         #! ${lib.getExe' pkgs.execline "execlineb"}
-        foreground { rsync --verbose --archive --ignore-existing --one-file-system /nix/ /nix-volume/ }
+        foreground { rsync --archive --ignore-existing --one-file-system /nix/ /nix-volume/ }
         # Link rootEnv to /nix/var/result
         foreground { mkdir --parents /nix-volume/var }
         foreground { ln --symbolic --force --no-dereference ${rootEnv} /nix-volume/var/result }
