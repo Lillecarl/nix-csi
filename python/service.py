@@ -268,7 +268,12 @@ class NodeServicer(csi_grpc.NodeBase):
         # This is an execline script that runs nix-store --dump-db | NIX_STATE_DIR=something nix-store --load-db
         nix_init_db = await run_captured("nix_init_db", NIX_STATE_DIR, *paths)
 
-        if rsync.returncode != 0 or ln1.returncode != 0 or ln2.returncode != 0 or nix_init_db.returncode != 0:
+        if (
+            rsync.returncode != 0
+            or ln1.returncode != 0
+            or ln2.returncode != 0
+            or nix_init_db.returncode != 0
+        ):
             # Remove gcroots if we failed something else
             gcPath.unlink(missing_ok=True)
             # Remove what we were working on
@@ -379,19 +384,19 @@ class NodeServicer(csi_grpc.NodeBase):
 
     async def NodeGetVolumeStats(self, stream):
         del stream  # typechecker
-        raise Exception("NodeGetVolumeStats not implemented")
+        raise GRPCError(Status.INVALID_ARGUMENT, "NodeGetVolumeStats not implemented")
 
     async def NodeExpandVolume(self, stream):
         del stream  # typechecker
-        raise Exception("NodeExpandVolume not implemented")
+        raise GRPCError(Status.INVALID_ARGUMENT, "NodeExpandVolume not implemented")
 
     async def NodeStageVolume(self, stream):
         del stream  # typechecker
-        raise Exception("NodeStageVolume not implemented")
+        raise GRPCError(Status.INVALID_ARGUMENT, "NodeStageVolume not implemented")
 
     async def NodeUnstageVolume(self, stream):
         del stream  # typechecker
-        raise Exception("NodeUnstageVolume not implemented")
+        raise GRPCError(Status.INVALID_ARGUMENT, "NodeUnstageVolume not implemented")
 
 
 async def serve():
