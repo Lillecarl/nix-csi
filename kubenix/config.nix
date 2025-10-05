@@ -4,7 +4,7 @@
     kubernetes.resources.configMaps.nix-config = {
       metadata.namespace = config.namespace;
       data."nix.conf" = ''
-        # build-users-group = root
+        build-users-group = root
         auto-allocate-uids = true
         experimental-features = nix-command flakes auto-allocate-uids fetch-closure
         ${lib.optionalString config.enableBinaryCache ''

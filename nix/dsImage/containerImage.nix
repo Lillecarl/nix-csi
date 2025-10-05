@@ -8,7 +8,6 @@
 }:
 let
   lib = pkgs.lib;
-  fishMinimal = pkgs.fish.override { usePython = false; };
   initCopy =
     pkgs.writeScriptBin "initCopy" # execline
       ''
@@ -29,21 +28,15 @@ let
     dinixEval.config.containerLauncher
     dinixEval.config.package
     pkgs.rsync
-    pkgs.util-linuxMinimal
     pkgs.lix
+    pkgs.util-linuxMinimal
     pkgs.gitMinimal
-    fishMinimal
+    pkgs.fishMinimal
     pkgs.uutils-coreutils-noprefix
-    pkgs.dockerTools.caCertificates
   ];
 in
 nix2container.buildImage {
   name = "nix-csi";
-  layers = [
-    (nix2container.buildLayer {
-      deps = rootPaths;
-    })
-  ];
   config = {
     Env = [
       "PATH=${rootEnv}/bin"

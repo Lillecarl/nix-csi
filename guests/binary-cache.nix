@@ -53,10 +53,9 @@ let
               command = lib.getExe (
                 pkgs.writeScriptBin "init" ''
                   #! ${lib.getExe' pkgs.execline "execlineb"}
-                  foreground { mkdir --parents /etc/ssl/certs }
                   foreground { mkdir --parents /tmp }
-                  foreground { ln --symbolic ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt /etc/ssl/certs/ca-bundle.crt }
-                  foreground { ln --symbolic ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt /etc/ssl/certs/ca-certificates.crt }
+                  foreground { rsync --verbose --archive ${pkgs.dockerTools.fakeNss}/ / }
+                  foreground { rsync --verbose --archive ${pkgs.dockerTools.caCertificates}/ / }
                 ''
               );
             };
