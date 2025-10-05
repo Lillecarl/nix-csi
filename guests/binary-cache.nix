@@ -18,8 +18,12 @@ let
     pkgs.writeScriptBin "initCopy" # execline
       ''
         #! ${lib.getExe' pkgs.execline "execlineb"}
+        # Remove result symlink and let rsync overwrite it. This way we get
+        # persistence while allowing reconfiguration by relinking a new result.
         foreground { rm --recursive --force /nix-volume/var/result }
-        exec ${lib.getExe pkgs.rsync} --verbose --archive --ignore-existing --one-file-system /nix/ /nix-volume/
+        # rsync nix-csi supplied volume to /nix-volume which will be mounted as
+        # /nix in the runtime container.
+        ${lib.getExe pkgs.rsync} --verbose --archive --ignore-existing --one-file-system /nix/ /nix-volume/
       '';
 
   sshd_config =
@@ -51,7 +55,7 @@ let
           config = {
             name = "dinixinit";
             services.boot = {
-              # depends-on = [ "setup" ];
+              depends-on = [ "setup" ];
             };
             services.openssh = {
               type = "process";
@@ -67,6 +71,7 @@ let
                 pkgs.writeScriptBin "init" ''
                   #! ${lib.getExe' pkgs.execline "execlineb"}
                   foreground { mkdir --parents /etc/ssl/certs }
+                  foreground { mkdir --parents /tmp }
                   foreground { ln --symbolic ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt /etc/ssl/certs/ca-bundle.crt }
                   foreground { ln --symbolic ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt /etc/ssl/certs/ca-certificates.crt }
                 ''
