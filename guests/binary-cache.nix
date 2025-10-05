@@ -32,31 +32,35 @@ let
       modules = [
         {
           config = {
-            name = "dinixinit";
             services.boot = {
               depends-on = [
-                "setup"
                 "nix-serve"
               ];
             };
             services.openssh = {
               type = "process";
               command = "${lib.getExe' pkgs.openssh "sshd"} -D -f /etc/ssh/sshd_config";
+              depends-on = [ "setup" ];
             };
             services.nix-serve = {
               type = "process";
               command = "${lib.getExe pkgs.nix-serve-ng} --host * --port 80";
               options = [ "shares-console" ];
+              depends-on = [ "setup" ];
             };
+            # set up root filesystem with paths required for a Linux system to function normally
             services.setup = {
               type = "scripted";
               command = lib.getExe (
-                pkgs.writeScriptBin "init" ''
-                  #! ${lib.getExe' pkgs.execline "execlineb"}
-                  foreground { mkdir --parents /tmp }
-                  foreground { rsync --verbose --archive ${pkgs.dockerTools.fakeNss}/ / }
-                  foreground { rsync --verbose --archive ${pkgs.dockerTools.caCertificates}/ / }
-                ''
+                pkgs.writeScriptBin "setup" # execline
+                  ''
+                    #! ${lib.getExe' pkgs.execline "execlineb"}
+                    importas -S HOME
+                    foreground { mkdir --parents /tmp }
+                    foreground { mkdir --parents ''${HOME} }
+                    foreground { rsync --verbose --archive ${pkgs.dockerTools.fakeNss}/ / }
+                    foreground { rsync --verbose --archive ${pkgs.dockerTools.caCertificates}/ / }
+                  ''
               );
             };
           };
