@@ -11,6 +11,7 @@
         selector.matchLabels.app = "nix-csi-node";
         template = {
           metadata.labels.app = "nix-csi-node";
+          metadata.annotations."kubectl.kubernetes.io/default-container" = "nix-csi-node";
           spec = {
             initContainers.populate-nix = {
               name = "populate-nix";
