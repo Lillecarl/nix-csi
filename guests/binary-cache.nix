@@ -56,6 +56,7 @@ let
             name = "dinixinit";
             services.boot = {
               depends-on = [ "setup" ];
+              waits-for = [ "nix-serve-ng " ];
             };
             services.openssh = {
               type = "process";
@@ -63,7 +64,8 @@ let
             };
             services.nix-serve-ng = {
               type = "process";
-              command = "${lib.getExe pkgs.nix-serve-ng}";
+              command = "${lib.getExe pkgs.nix-serve-ng} --host \"*\" --port 80";
+              options = [ "shares-console" ];
             };
             services.setup = {
               type = "scripted";

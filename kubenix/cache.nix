@@ -1,10 +1,20 @@
 { config, ... }:
 {
   config = {
-    # Secret for binary cache
-    kubernetes.resources.secrets.nix-cache-signing-key = {
+    kubernetes.resources.secrets.nix-serve-priv = {
       metadata.namespace = config.namespace;
       stringData.cache-secret = builtins.readFile ../cache-secret;
+    };
+
+    kubernetes.resources.secrets.nix-ssh-pub = {
+      metadata.namespace = config.namespace;
+      stringData.authorized_keys = builtins.readFile ../id_ed25519.pub;
+    };
+
+    kubernetes.resources.secrets.nix-ssh-priv = {
+      metadata.namespace = config.namespace;
+      stringData."id_ed25519"= builtins.readFile ../id_ed25519;
+      stringData."id_ed25519.pub"= builtins.readFile ../id_ed25519.pub;
     };
 
     kubernetes.resources.statefulSets.nix-cache = {
@@ -52,7 +62,7 @@
                 }
                 {
                   name = "NIX_SECRET_KEY_FILE";
-                  value = "/secrets/cache-priv-key.pem";
+                  value = "/secrets/cache-secret";
                 }
               ];
               ports = [
@@ -83,7 +93,7 @@
               }
               {
                 name = "signing-key";
-                secret.secretName = "nix-cache-signing-key";
+                secret.secretName = "nix-serve-priv";
               }
               {
                 name = "nix-csi";

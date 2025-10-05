@@ -12,7 +12,6 @@
         template = {
           metadata.labels.app = "nix-csi-node";
           spec = {
-            hostNetwork = true;
             initContainers.populate-nix = {
               name = "populate-nix";
               command = [ "initCopy" ];

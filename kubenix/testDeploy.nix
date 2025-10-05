@@ -39,7 +39,6 @@ in
                 }
               ];
             };
-            hostNetwork = true;
             volumes = [
               {
                 name = "nix-config";
