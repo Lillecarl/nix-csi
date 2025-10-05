@@ -67,9 +67,7 @@
               ];
             };
             containers.nix-serve = {
-              command = [
-                "/nix/var/result/bin/dinixinit"
-              ];
+              command = [ "dinixLauncher" ];
               image = "dramforever/scratch@sha256:adf10351862ad5351ac2e714e04a0afb020b9df658ac99a07cbf49c0e18f8e43";
               env = [
                 {

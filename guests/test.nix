@@ -27,7 +27,6 @@ let
       modules = [
         {
           config = {
-            name = "dinixinit";
             services.boot.depends-on = [ "setup" ];
             services.setup = {
               type = "scripted";
