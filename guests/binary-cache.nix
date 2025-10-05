@@ -36,6 +36,9 @@ let
               depends-on = [
                 "nix-serve"
               ];
+              waits-for = [
+                "openssh"
+              ];
             };
             services.openssh = {
               type = "process";
