@@ -52,7 +52,7 @@ pkgs.buildEnv {
   paths = with pkgs; [
     curl
     uutils-coreutils-noprefix
-    (fish.override { usePython = false; })
+    fishMinimal
     execline
     lix
     gitMinimal

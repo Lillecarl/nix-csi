@@ -17,8 +17,7 @@ let
     name = "fakeNss";
     paths =
       let
-        # loginShell = lib.getExe' pkgs.shadow "nologin";
-        loginShell = lib.getExe pkgs.fish;
+        loginShell = lib.getExe pkgs.fishMinimal;
       in
       [
         (pkgs.writeTextDir "etc/passwd" # passwd
