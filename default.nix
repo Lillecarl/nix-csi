@@ -99,6 +99,28 @@ rec {
         rm ''${fifo}
       '';
 
+  deploy =
+    pkgs.writers.writeFishBin "deploy" # fish
+      ''
+        # Generate binary cache keys
+        if ! test -f ./cache-secret || ! test -f ./cache-public
+            nix-store --generate-binary-cache-key nix-csi-cache-1 ./cache-secret ./cache-public
+        end
+        # Generate ssh keys
+        if ! test -f ./id_ed25519 || ! test -f ./id_ed25519.pub
+            ssh-keygen -t ed25519 -f ./id_ed25519 -C nix-cache -N ""
+        end
+        # Build DaemonSet containerImage
+        nix run --file . imageToContainerd || begin
+            echo "DaemonSet image failed"
+            return 1
+        end
+        # Render kubenix yaml
+        cat ${manifestJSON} >./deployment/mega.yaml
+        # Deploy kubenix yaml
+        ${lib.getExe pkgs.kluctl} deploy --target local --yes
+      '';
+
   # simpler than devshell
   python = pkgs.python3.withPackages (
     pypkgs: with pypkgs; [
@@ -114,6 +136,7 @@ rec {
     paths = [
       python
       n2c.skopeo-nix2container
+      pkgs.kluctl
     ];
   };
   inherit pkgs;
