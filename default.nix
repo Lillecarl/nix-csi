@@ -116,7 +116,7 @@ rec {
             return 1
         end
         # Render kubenix yaml
-        cat ${manifestJSON} >./deployment/mega.yaml
+        cat ${toString manifestJSON} >./deployment/mega.yaml || return 1
         # Deploy kubenix yaml
         ${lib.getExe pkgs.kluctl} deploy --target local --yes
       '';
