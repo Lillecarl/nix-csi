@@ -10,7 +10,7 @@
     kubernetes.resources.secrets.sshc = lib.mkIf config.enableBinaryCache {
       metadata.namespace = config.namespace;
       stringData = {
-        # known_hosts = builtins.readFile ../id_ed25519.pub;
+        known_hosts = "nix-cache.${config.namespace}.svc ${builtins.readFile ../id_ed25519.pub}";
         id_ed25519 = builtins.readFile ../id_ed25519;
         config = # ssh
           ''
@@ -19,7 +19,6 @@
                 User root
                 Port 22
                 IdentityFile ~/.ssh/id_ed25519
-                StrictHostKeyChecking accept-new
                 UserKnownHostsFile ~/.ssh/known_hosts
           '';
       };
