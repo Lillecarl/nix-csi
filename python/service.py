@@ -281,7 +281,7 @@ class NodeServicer(csi_grpc.NodeBase):
                 Status.INTERNAL,
                 f"nix path-info failed: {pathInfo.returncode=} {pathInfo.stderr=}",
             )
-        paths = set(pathInfo.stdout.splitlines())
+        paths = pathInfo.stdout.splitlines()
 
         # Create container store structure
         NIX_STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -399,25 +399,20 @@ class NodeServicer(csi_grpc.NodeBase):
         await stream.send_message(reply)
 
         async def copyToCache():
-            # Get derivation from packagePath
-            drv = await run_captured("nix-store", "--query", "--deriver", packagePath)
-            if drv.returncode != 0:
-                return
-
-            # Get all requisites for derivation (build-time dependencies)
-            requisites = await run_captured(
-                "nix-store",
-                "--query",
-                "--requisites",
-                "--include-outputs",
-                drv.stdout,
+            pathInfo = await run_captured(
+                "nix",
+                "path-info",
+                "--recursive",
+                "--derivation",
+                packagePath,
             )
-            if requisites.returncode != 0:
+            if pathInfo.returncode != 0:
+                logger.error("Unable to copy because path-info failed, shouldn't be possible")
                 return
 
             # Filter away derivation files
             paths = {
-                p for p in requisites.stdout.splitlines() if not p.endswith(".drv")
+                p for p in pathInfo.stdout.splitlines() if not p.endswith(".drv")
             }
             for _ in range(6):
                 nixCopy = await run_captured(
