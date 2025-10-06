@@ -13,4 +13,5 @@
     ./config.nix
     ./cache.nix
   ];
+  config.kubenix.project = "nix-csi";
 }
