@@ -202,13 +202,12 @@ class NodeServicer(csi_grpc.NodeBase):
                 Status.INVALID_ARGUMENT, "Missing 'expr' in volume_context"
             )
 
-        logger.info(f"Requested to build\n{expr}")
-
         root_name = request.volume_id
 
-        expressionFile = Path(tempfile.mktemp(suffix=".nix"))
-        try:
-            expressionFile.write_text(expr)
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".nix") as f:
+            expressionFile = Path(f.name)
+            f.write(expr)
+            f.flush()  # Ensure content is written before nix reads it
 
             gcPath = NIX_GCROOTS / root_name
 
@@ -223,7 +222,9 @@ class NodeServicer(csi_grpc.NodeBase):
                 expressionFile,
             )
             if eval.returncode != 0:
-                raise NixCsiError(
+                logger.error(f"nix eval failed: {eval.returncode=}")
+                # Use GRPCError here, we don't need to log output again
+                raise GRPCError(
                     Status.INVALID_ARGUMENT,
                     f"nix eval failed: {eval.returncode=} {eval.combined=}",
                 )
@@ -240,15 +241,12 @@ class NodeServicer(csi_grpc.NodeBase):
                 expressionFile,
             )
             if build.returncode != 0:
-                raise NixCsiError(
+                logger.error(f"nix eval failed: {eval.returncode=}")
+                # Use GRPCError here, we don't need to log output again
+                raise GRPCError(
                     Status.INVALID_ARGUMENT,
                     f"nix build failed: {build.returncode=} {build.stderr=}",
                 )
-
-        except Exception as ex:
-            raise ex
-        finally:
-            expressionFile.unlink(missing_ok=True)
 
         # Get the resulting storepath
         packagePath = Path(eval.stdout)
