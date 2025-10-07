@@ -1,4 +1,0 @@
-discriminator: nix-csi
-targets:
-  - name: local
-

@@ -99,6 +99,29 @@ rec {
         rm ''${fifo}
       '';
 
+  kluctlProject = dinixEval.pkgs.writeMultipleFiles {
+    name = "kluctlproject";
+    files = {
+      ".kluctl.yaml" = {
+        content = # yaml
+          ''
+            targets:
+              - name: local
+          '';
+      };
+      "deployment.yaml" = {
+        content = # yaml
+          ''
+            deployments:
+              - path: manifests
+          '';
+      };
+      "manifests/kubenix.yaml" = {
+        content = builtins.toJSON kubenixEval.config.kubernetes.generated;
+      };
+    };
+  };
+
   deploy =
     pkgs.writers.writeFishBin "deploy" # fish
       ''
@@ -115,10 +138,7 @@ rec {
             echo "DaemonSet image failed"
             return 1
         end
-        # Render kubenix yaml
-        cat ${toString manifestJSON} >./deployment/mega.yaml || return 1
-        # Deploy kubenix yaml
-        ${lib.getExe pkgs.kluctl} deploy --target local --yes
+        ${lib.getExe pkgs.kluctl} deploy --target local --discriminator ${kubenixEval.config.kubenix.project} --project-dir ${kluctlProject} $argv
       '';
 
   # simpler than devshell
