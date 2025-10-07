@@ -47,46 +47,37 @@ class NixCsiError(GRPCError):
         self.details = details
 
 
-def get_kernel_boot_time() -> int:
+def get_kernel_boot_time(stat_file: Path = Path("/proc/stat")) -> int:
     """Returns kernel boot time as Unix timestamp."""
-    stat_file = Path("/hoststat")
     for line in stat_file.read_text().splitlines():
         if line.startswith("btime "):
-            return int(line.split()[1])
+            return int(line.split()[1].strip())
     raise RuntimeError("btime not found in /hoststat")
 
 
-def should_cleanup_mounts() -> bool:
-    """Check if system rebooted since last run."""
-    current_boot = get_kernel_boot_time()
-
-    state_file = CSI_ROOT / "boottime"
-
-    if not state_file.exists():
-        state_file.write_text(str(current_boot))
-        return False
-
-    last_boot = int(state_file.read_text().strip())
-
-    if current_boot != last_boot:
-        state_file.write_text(str(current_boot))
-        return True
-
-    return False
-
-
-def boot_cleanup():
+def reboot_cleanup():
     """Cleanup volume trees and gcroots if we have rebooted"""
-    logger.info("Checking boot-time for cleanup operations")
-    if should_cleanup_mounts():
-        if CSI_VOLUMES.exists():
-            logger.info("Cleaning old volumes")
-            shutil.rmtree(CSI_VOLUMES)
-            CSI_VOLUMES.mkdir(parents=True, exist_ok=True)
-        if NIX_GCROOTS.exists():
-            logger.info("Cleaning gcroots")
-            shutil.rmtree(NIX_GCROOTS)
-            NIX_GCROOTS.mkdir(parents=True, exist_ok=True)
+    stat_file = Path("/proc/stat")
+    state_file = CSI_ROOT / "proc_stat"
+
+    needs_cleanup = False
+    if state_file.exists():
+        try:
+            old_boot = get_kernel_boot_time(state_file)
+            current_boot = get_kernel_boot_time(stat_file)
+            needs_cleanup = old_boot != current_boot
+        except RuntimeError:
+            # Corrupted state file, treat as needing cleanup
+            needs_cleanup = True
+
+    shutil.copy2(stat_file, state_file)
+
+    if needs_cleanup:
+        logger.info("Reboot detected - cleaning volumes and gcroots")
+        for path in [CSI_VOLUMES, NIX_GCROOTS]:
+            if path.exists():
+                shutil.rmtree(path)
+                path.mkdir(parents=True, exist_ok=True)
 
 
 def log_command(*args, log_level: int):
@@ -407,13 +398,13 @@ class NodeServicer(csi_grpc.NodeBase):
                 packagePath,
             )
             if pathInfo.returncode != 0:
-                logger.error("Unable to copy because path-info failed, shouldn't be possible")
+                logger.error(
+                    "Unable to copy because path-info failed, shouldn't be possible"
+                )
                 return
 
             # Filter away derivation files
-            paths = {
-                p for p in pathInfo.stdout.splitlines() if not p.endswith(".drv")
-            }
+            paths = {p for p in pathInfo.stdout.splitlines() if not p.endswith(".drv")}
             for _ in range(6):
                 nixCopy = await run_captured(
                     "nix", "copy", "--to", "ssh://nix-cache", *paths
@@ -505,7 +496,7 @@ class NodeServicer(csi_grpc.NodeBase):
 
 async def serve():
     # Clean old volumes on startup
-    boot_cleanup()
+    reboot_cleanup()
     # Create directories we operate in
     CSI_ROOT.mkdir(parents=True, exist_ok=True)
     CSI_VOLUMES.mkdir(parents=True, exist_ok=True)
