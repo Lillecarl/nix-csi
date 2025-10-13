@@ -196,58 +196,77 @@ class NodeServicer(csi_grpc.NodeBase):
             await stream.send_message(reply)
             return
 
-        expr = request.volume_context.get("expr")
-        if expr is None:
-            raise NixCsiError(
-                Status.INVALID_ARGUMENT, "Missing 'expr' in volume_context"
-            )
-
+        expression = request.volume_context.get("expression")
+        storePath = request.volume_context.get("storePath")
         root_name = request.volume_id
+        packagePath: Path | None = None
+        gcPath = NIX_GCROOTS / root_name
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".nix") as f:
-            expressionFile = Path(f.name)
-            f.write(expr)
-            f.flush()  # Ensure content is written before nix reads it
-
-            gcPath = NIX_GCROOTS / root_name
-
-            # Get outPath from eval
-            eval = await run_console(
-                "nix",
-                "eval",
-                "--raw",
-                "--impure",
-                "--file",
-                expressionFile,
-            )
-            if eval.returncode != 0:
-                logger.error(f"nix eval failed: {eval.returncode=}")
-                # Use GRPCError here, we don't need to log output again
-                raise GRPCError(
-                    Status.INVALID_ARGUMENT,
-                    f"nix eval failed: {eval.returncode=} {eval.combined=}",
+        if storePath is not None:
+            logger.debug(f"{storePath=}")
+            # TODO: Support multiarch
+            system = (
+                await run_console(
+                    "nix",
+                    "eval",
+                    "--impure",
+                    "--raw",
+                    "--expr",
+                    "builtins.currentSystem",
                 )
+            ).stdout
 
-            # Build, stream to console
+            # Fetch storePath from caches
             build = await run_console(
                 "nix",
                 "build",
                 "--impure",
+                "--print-out-paths",
                 "--out-link",
                 gcPath,
-                "--file",
-                expressionFile,
+                # "installable"
+                storePath,
             )
             if build.returncode != 0:
-                logger.error(f"nix eval failed: {eval.returncode=}")
+                logger.error(f"nix build (cache fetch) failed: {build.returncode=}")
                 # Use GRPCError here, we don't need to log output again
                 raise GRPCError(
                     Status.INVALID_ARGUMENT,
-                    f"nix build failed: {build.returncode=} {build.stderr=}",
+                    f"nix build (cache fetch) failed: {build.returncode=} {build.stderr=}",
                 )
+            packagePath = Path(build.stdout.splitlines()[0])
+        elif expression is not None:
+            logger.debug(f"{expression=}")
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".nix") as f:
+                expressionFile = Path(f.name)
+                f.write(expression)
+                f.flush()
 
-        # Get the resulting storepath
-        packagePath = Path(eval.stdout)
+                # Build expression
+                build = await run_console(
+                    "nix",
+                    "build",
+                    "--impure",
+                    "--print-out-paths",
+                    "--out-link",
+                    gcPath,
+                    # "installable"
+                    "--file",
+                    expressionFile,
+                )
+                if build.returncode != 0:
+                    logger.error(f"nix build (expression) failed: {build.returncode=}")
+                    # Use GRPCError here, we don't need to log output again
+                    raise GRPCError(
+                        Status.INVALID_ARGUMENT,
+                        f"nix build (expression) failed: {build.returncode=} {build.stderr=}",
+                    )
+                packagePath = Path(build.stdout.splitlines()[0])
+        else:
+            raise GRPCError(
+                Status.INVALID_ARGUMENT,
+                "Set either `expression` or `storePath` in volume attributes",
+            )
 
         fakeRoot = CSI_VOLUMES / root_name
         nixCsiPrefix = fakeRoot / "nix"
