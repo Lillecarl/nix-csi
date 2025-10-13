@@ -24,142 +24,160 @@ let
     repo = "nix2container";
     ref = "master";
   };
-in
-rec {
-  n2c = import n2cSrc {
-    inherit pkgs;
-    system = builtins.currentSystem;
+  crossAttrs = {
+    "x86_64-linux" = "aarch64-linux";
+    "aarch64-linux" = "x86_64-linux";
   };
-  csi-proto-python = pkgs.python3Packages.callPackage ./nix/csi-proto-python { };
-  nix-csi = pkgs.python3Packages.callPackage ./python {
-    inherit csi-proto-python;
+  pkgsCross = import pkgs.path {
+    system = crossAttrs.${builtins.currentSystem};
   };
-  easykubenix =
-    let
-      try = builtins.tryEval (import /home/lillecarl/Code/easykubenix);
-    in
-    if try.success then
-      try.value
-    else
-      import (
-        builtins.fetchTree {
-          type = "github";
-          owner = "lillecarl";
-          repo = "easykubenix";
+  persys = pkgs: rec {
+    inherit pkgs lib;
+    n2c = import n2cSrc {
+      inherit pkgs;
+      system = pkgs.system;
+    };
+    csi-proto-python = pkgs.python3Packages.callPackage ./nix/csi-proto-python { };
+    nix-csi = pkgs.python3Packages.callPackage ./python {
+      inherit csi-proto-python;
+    };
+    easykubenix =
+      let
+        try = builtins.tryEval (import /home/lillecarl/Code/easykubenix);
+      in
+      if try.success then
+        try.value
+      else
+        import (
+          builtins.fetchTree {
+            type = "github";
+            owner = "lillecarl";
+            repo = "easykubenix";
+          }
+        );
+
+    # kubenix evaluation
+    kubenixEval = easykubenix {
+      modules = [
+        ./kubenix
+        {
+          config = {
+            image = imageRef;
+            kluctl.discriminator = "nix-csi";
+          };
         }
-      );
+      ];
+    };
 
-  # kubenix evaluation
-  kubenixEval = easykubenix {
-    modules = [
-      ./kubenix
-      {
-        config = {
-          image = image.imageRefUnsafe;
-          kluctl.discriminator = "nix-csi";
-        };
-      }
-    ];
-  };
+    # dinix evaluation for daemonset
+    dinixEval = import ./nix/dsImage/dinixEval.nix { inherit pkgs dinix nix-csi; };
+    # script to build daemonset image
+    image = import ./nix/dsImage {
+      inherit pkgs dinix nix-csi;
+      inherit (n2c) nix2container;
+    };
+    imageToContainerd = copyToContainerd image;
+    imageRef = "bogus.io/${image.imageRefUnsafe}";
 
-  # dinix evaluation for daemonset
-  dinixEval = import ./nix/dsImage/dinixEval.nix { inherit pkgs dinix nix-csi; };
-  # script to build daemonset image
-  image = import ./nix/dsImage {
-    inherit pkgs dinix nix-csi;
-    inherit (n2c) nix2container;
-  };
-  imageToContainerd = copyToContainerd image;
+    copyToContainerd =
+      image:
+      pkgs.writeScriptBin "copyToContainerd" # execline
+        ''
+          #!${pkgs.execline}/bin/execlineb -P
 
-  copyToContainerd =
-    image:
-    pkgs.writeScriptBin "copyToContainerd" # execline
-      ''
-        #!${pkgs.execline}/bin/execlineb -P
+          # Set up a socket we can write to
+          backtick -E fifo { mktemp -u ocisocket.XXXXXX }
+          foreground { mkfifo $fifo }
+          trap { default { rm ''${fifo} } }
 
-        # Set up a socket we can write to
-        backtick -E fifo { mktemp -u ocisocket.XXXXXX }
-        foreground { mkfifo $fifo }
-        trap { default { rm ''${fifo} } }
+          # Dump image to socket in the background
+          background {
+            # Ignore stdout (since containerd requires sudo and we want a clean prompt)
+            redirfd -w 1 /dev/null
+            ${lib.getExe n2c.skopeo-nix2container}
+              --insecure-policy copy
+              nix:${image}
+              oci-archive:''${fifo}:${imageRef}
+          }
+          export CONTAINERD_ADDRESS /run/k3s/containerd/containerd.sock
 
-        # Dump image to socket in the background
-        background {
-          # Ignore stdout (since containerd requires sudo and we want a clean prompt)
-          redirfd -w 1 /dev/null
-          ${lib.getExe n2c.skopeo-nix2container}
-            --insecure-policy copy
-            nix:${image}
-            oci-archive:''${fifo}:docker.io/library/${image.imageRefUnsafe}
-        }
-        export CONTAINERD_ADDRESS /run/k3s/containerd/containerd.sock
+          foreground {
+            sudo -E ${lib.getExe pkgs.nerdctl}
+              --namespace k8s.io
+              load --input ''${fifo}
+          }
+          rm ''${fifo}
+        '';
 
-        foreground {
-          sudo -E ${lib.getExe pkgs.nerdctl}
-            --namespace k8s.io
-            load --input ''${fifo}
-        }
-        rm ''${fifo}
-      '';
+    deploy =
+      pkgs.writers.writeFishBin "deploy" # fish
+        ''
+          # Generate binary cache keys
+          if ! test -f ./cache-secret || ! test -f ./cache-public
+              nix-store --generate-binary-cache-key nix-csi-cache-1 ./cache-secret ./cache-public
+          end
+          # Generate ssh keys
+          if ! test -f ./id_ed25519 || ! test -f ./id_ed25519.pub
+              ssh-keygen -t ed25519 -f ./id_ed25519 -C nix-cache -N ""
+          end
+          # Build DaemonSet containerImage
+          nix run --file . imageToContainerd || begin
+              echo "DaemonSet image failed"
+              return 1
+          end
+          ${lib.getExe kubenixEval.deploymentScript} $argv
+        '';
 
-  kluctlProject = dinixEval.pkgs.writeMultipleFiles {
-    name = "kluctlproject";
-    files = {
-      ".kluctl.yaml" = {
-        content = # yaml
-          ''
-            targets:
-              - name: local
-          '';
-      };
-      "deployment.yaml" = {
-        content = # yaml
-          ''
-            deployments:
-              - path: manifests
-          '';
-      };
-      "manifests/kubenix.yaml" = {
-        content = builtins.toJSON kubenixEval.config.kubernetes.generated;
-      };
+    # simpler than devshell
+    python = pkgs.python3.withPackages (
+      pypkgs: with pypkgs; [
+        nix-csi
+        csi-proto-python
+        grpclib
+        sh
+      ]
+    );
+    # env to add to PATH with direnv
+    repoenv = pkgs.buildEnv {
+      name = "repoenv";
+      paths = [
+        python
+        n2c.skopeo-nix2container
+        pkgs.kluctl
+      ];
     };
   };
-
-  deploy =
-    pkgs.writers.writeFishBin "deploy" # fish
+in
+let
+  on = persys pkgs;
+  off = persys pkgsCross;
+in
+on
+// {
+  inherit off;
+  merge =
+    let
+      version = "0.1.0";
+      url = system: "quay.io/lillecarl/nix-csi:${version}-${system}";
+    in
+    pkgs.writeScriptBin "merge" # fish
       ''
-        # Generate binary cache keys
-        if ! test -f ./cache-secret || ! test -f ./cache-public
-            nix-store --generate-binary-cache-key nix-csi-cache-1 ./cache-secret ./cache-public
+        #! ${lib.getExe pkgs.fishMinimal}
+        set buildDir (mktemp -d ocibuild.XXXXXX)
+        echo $buildDir
+        function cleanup --on-event fish_exit
+          # rm -rf $buildDir
         end
-        # Generate ssh keys
-        if ! test -f ./id_ed25519 || ! test -f ./id_ed25519.pub
-            ssh-keygen -t ed25519 -f ./id_ed25519 -C nix-cache -N ""
-        end
-        # Build DaemonSet containerImage
-        nix run --file . imageToContainerd || begin
-            echo "DaemonSet image failed"
-            return 1
-        end
-        ${lib.getExe pkgs.kluctl} deploy --target local --discriminator ${kubenixEval.config.kubenix.project} --project-dir ${kluctlProject} $argv
+        ${lib.getExe on.image.copyTo} oci-archive:$buildDir/on:${url on.pkgs.system}
+        ${lib.getExe off.image.copyTo} oci-archive:$buildDir/off:${url off.pkgs.system}
+        podman load --input $buildDir/on
+        podman load --input $buildDir/off
+        podman manifest rm quay.io/lillecarl/nix-csi:${version}
+        podman manifest create quay.io/lillecarl/nix-csi:${version}
+        podman manifest add quay.io/lillecarl/nix-csi:${version} ${url on.pkgs.system}
+        podman manifest add quay.io/lillecarl/nix-csi:${version} ${url off.pkgs.system}
+        podman push ${url on.pkgs.system}
+        podman push ${url off.pkgs.system}
+        podman manifest push quay.io/lillecarl/nix-csi:0.1.0
       '';
-
-  # simpler than devshell
-  python = pkgs.python3.withPackages (
-    pypkgs: with pypkgs; [
-      nix-csi
-      csi-proto-python
-      grpclib
-      sh
-    ]
-  );
-  # env to add to PATH with direnv
-  repoenv = pkgs.buildEnv {
-    name = "repoenv";
-    paths = [
-      python
-      n2c.skopeo-nix2container
-      pkgs.kluctl
-    ];
-  };
-  inherit pkgs;
 }

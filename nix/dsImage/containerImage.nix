@@ -40,10 +40,17 @@ in
 nix2container.buildImage {
   name = "nix-csi";
   initializeNixDatabase = true;
+  maxLayers = 120; # Does this include "layers?""
   config = {
     Env = [
       "PATH=${rootEnv}/bin"
     ];
     Entrypoint = [ (lib.getExe initCopy) ];
   };
+  layers = [
+    (nix2container.buildLayer {
+      deps = [ dinixEval.config.containerLauncher ];
+      maxLayers = 110;
+    })
+  ];
 }
