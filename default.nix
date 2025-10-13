@@ -18,17 +18,6 @@ let
 
   dinix = /home/lillecarl/Code/dinix;
 
-  # kubenix is only published as a flake :(
-  flake-compatish = import (
-    builtins.fetchTree {
-      type = "github";
-      owner = "lillecarl";
-      repo = "flake-compatish";
-      ref = "main";
-    }
-  );
-  flake = flake-compatish ./.;
-
   n2cSrc = builtins.fetchTree {
     type = "github";
     owner = "nlewo";
@@ -45,20 +34,33 @@ rec {
   nix-csi = pkgs.python3Packages.callPackage ./python {
     inherit csi-proto-python;
   };
+  easykubenix =
+    let
+      try = builtins.tryEval (import /home/lillecarl/Code/easykubenix);
+    in
+    if try.success then
+      try.value
+    else
+      import (
+        builtins.fetchTree {
+          type = "github";
+          owner = "lillecarl";
+          repo = "easykubenix";
+        }
+      );
 
   # kubenix evaluation
-  kubenixEval = flake.inputs.kubenix.evalModules.${builtins.currentSystem} {
-    module = _: {
-      imports = [
-        ./kubenix
-        {
-          config.image = image.imageRefUnsafe;
-        }
-      ];
-    };
+  kubenixEval = easykubenix {
+    modules = [
+      ./kubenix
+      {
+        config = {
+          image = image.imageRefUnsafe;
+          kluctl.discriminator = "nix-csi";
+        };
+      }
+    ];
   };
-  manifestYAML = kubenixEval.config.kubernetes.resultYAML;
-  manifestJSON = kubenixEval.config.kubernetes.result;
 
   # dinix evaluation for daemonset
   dinixEval = import ./nix/dsImage/dinixEval.nix { inherit pkgs dinix nix-csi; };

@@ -5,10 +5,9 @@
   ...
 }:
 {
-  config = {
+  config.kubernetes.resources.${config.namespace} = {
     # mounts to /nix/var/nix-csi/home/.ssh
-    kubernetes.resources.secrets.sshc = lib.mkIf config.enableBinaryCache {
-      metadata.namespace = config.namespace;
+    Secret.sshc = lib.mkIf config.enableBinaryCache {
       stringData = {
         known_hosts = "nix-cache.${config.namespace}.svc ${builtins.readFile ../id_ed25519.pub}";
         id_ed25519 = builtins.readFile ../id_ed25519;
@@ -24,8 +23,7 @@
       };
     };
 
-    kubernetes.api.resources.daemonSets."nix-csi-node" = {
-      metadata.namespace = config.namespace;
+    DaemonSet.nix-csi-node = {
       spec = {
         updateStrategy = {
           type = "RollingUpdate";
@@ -36,119 +34,125 @@
           metadata.labels.app = "nix-csi-node";
           metadata.annotations."kubectl.kubernetes.io/default-container" = "nix-csi-node";
           spec = {
-            initContainers.populate-nix = {
-              name = "populate-nix";
-              image = config.image;
-              volumeMounts = [
-                {
-                  mountPath = "/nix-volume";
-                  name = "nix-store";
-                }
-              ];
-              imagePullPolicy = "IfNotPresent";
-            };
-            containers.nix-csi-node = {
-              name = "nix-csi-node";
-              image = "dramforever/scratch@sha256:adf10351862ad5351ac2e714e04a0afb020b9df658ac99a07cbf49c0e18f8e43";
-              securityContext.privileged = true;
-              command = [ "dinixLauncher" ];
-              env = [
-                {
-                  name = "CSI_ENDPOINT";
-                  value = "unix:///csi/csi.sock";
-                }
-                {
-                  name = "KUBE_NODE_NAME";
-                  valueFrom.fieldRef.fieldPath = "spec.nodeName";
-                }
-                {
-                  name = "PATH";
-                  value = "/nix/var/result/bin";
-                }
-                {
-                  name = "HOME";
-                  value = "/nix/var/nix-csi/home";
-                }
-                {
-                  name = "USER";
-                  value = "root";
-                }
-                {
-                  name = "BUILD_CACHE";
-                  value = lib.boolToString config.enableBinaryCache;
-                }
-              ];
-              volumeMounts = [
-                {
-                  name = "socket-dir";
-                  mountPath = "/csi";
-                }
-                {
-                  name = "kubelet-dir";
-                  mountPath = "/var/lib/kubelet";
-                  mountPropagation = "Bidirectional";
-                }
-                {
-                  name = "nix-store";
-                  mountPath = "/nix";
-                  mountPropagation = "Bidirectional";
-                }
-                {
-                  name = "registration-dir";
-                  mountPath = "/registration";
-                }
-                {
-                  name = "nix-config";
-                  mountPath = "/etc/nix";
-                }
-                {
-                  name = "sshc";
-                  mountPath = "/etc/sshc";
-                }
-              ];
-            };
-            containers.nix-csi-registrar = {
-              image = "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.15.0";
-              args = [
-                "--v=5"
-                "--csi-address=/csi/csi.sock"
-                "--kubelet-registration-path=/var/lib/kubelet/plugins/nix.csi.store/csi.sock"
-              ];
-              env = [
-                {
-                  name = "KUBE_NODE_NAME";
-                  valueFrom.fieldRef.fieldPath = "spec.nodeName";
-                }
-              ];
-              volumeMounts = [
-                {
-                  name = "socket-dir";
-                  mountPath = "/csi";
-                }
-                {
-                  name = "kubelet-dir";
-                  mountPath = "/var/lib/kubelet";
-                }
-                {
-                  name = "registration-dir";
-                  mountPath = "/registration";
-                }
-              ];
-            };
-            containers.nix-csi-liveness = {
-              image = "registry.k8s.io/sig-storage/livenessprobe:v2.17.0";
-              args = [ "--csi-address=/csi/csi.sock" ];
-              volumeMounts = [
-                {
-                  name = "socket-dir";
-                  mountPath = "/csi";
-                }
-                {
-                  name = "registration-dir";
-                  mountPath = "/registration";
-                }
-              ];
-            };
+            initContainers = [
+              {
+                name = "populate-nix";
+                image = config.image;
+                volumeMounts = [
+                  {
+                    mountPath = "/nix-volume";
+                    name = "nix-store";
+                  }
+                ];
+                imagePullPolicy = "IfNotPresent";
+              }
+            ];
+            containers = [
+              {
+                name = "nix-csi-node";
+                image = "dramforever/scratch@sha256:adf10351862ad5351ac2e714e04a0afb020b9df658ac99a07cbf49c0e18f8e43";
+                securityContext.privileged = true;
+                command = [ "dinixLauncher" ];
+                env = [
+                  {
+                    name = "CSI_ENDPOINT";
+                    value = "unix:///csi/csi.sock";
+                  }
+                  {
+                    name = "KUBE_NODE_NAME";
+                    valueFrom.fieldRef.fieldPath = "spec.nodeName";
+                  }
+                  {
+                    name = "PATH";
+                    value = "/nix/var/result/bin";
+                  }
+                  {
+                    name = "HOME";
+                    value = "/nix/var/nix-csi/home";
+                  }
+                  {
+                    name = "USER";
+                    value = "root";
+                  }
+                  {
+                    name = "BUILD_CACHE";
+                    value = lib.boolToString config.enableBinaryCache;
+                  }
+                ];
+                volumeMounts = [
+                  {
+                    name = "socket-dir";
+                    mountPath = "/csi";
+                  }
+                  {
+                    name = "kubelet-dir";
+                    mountPath = "/var/lib/kubelet";
+                    mountPropagation = "Bidirectional";
+                  }
+                  {
+                    name = "nix-store";
+                    mountPath = "/nix";
+                    mountPropagation = "Bidirectional";
+                  }
+                  {
+                    name = "registration-dir";
+                    mountPath = "/registration";
+                  }
+                  {
+                    name = "nix-config";
+                    mountPath = "/etc/nix";
+                  }
+                  {
+                    name = "sshc";
+                    mountPath = "/etc/sshc";
+                  }
+                ];
+              }
+              {
+                name = "csi-node-driver-registrar";
+                image = "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.15.0";
+                args = [
+                  "--v=5"
+                  "--csi-address=/csi/csi.sock"
+                  "--kubelet-registration-path=/var/lib/kubelet/plugins/nix.csi.store/csi.sock"
+                ];
+                env = [
+                  {
+                    name = "KUBE_NODE_NAME";
+                    valueFrom.fieldRef.fieldPath = "spec.nodeName";
+                  }
+                ];
+                volumeMounts = [
+                  {
+                    name = "socket-dir";
+                    mountPath = "/csi";
+                  }
+                  {
+                    name = "kubelet-dir";
+                    mountPath = "/var/lib/kubelet";
+                  }
+                  {
+                    name = "registration-dir";
+                    mountPath = "/registration";
+                  }
+                ];
+              }
+              {
+                name = "livenessprobe";
+                image = "registry.k8s.io/sig-storage/livenessprobe:v2.17.0";
+                args = [ "--csi-address=/csi/csi.sock" ];
+                volumeMounts = [
+                  {
+                    name = "socket-dir";
+                    mountPath = "/csi";
+                  }
+                  {
+                    name = "registration-dir";
+                    mountPath = "/registration";
+                  }
+                ];
+              }
+            ];
             volumes = [
               {
                 name = "nix-store";

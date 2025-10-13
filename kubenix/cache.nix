@@ -1,15 +1,13 @@
 { config, lib, ... }:
 {
-  config = lib.mkIf config.enableBinaryCache {
+  config.kubernetes.resources.${config.namespace} = lib.mkIf config.enableBinaryCache {
     # Mounts to /etc/nix-serve
-    kubernetes.resources.secrets.nix-serve = {
-      metadata.namespace = config.namespace;
+    Secret.nix-serve = {
       stringData.secret = builtins.readFile ../cache-secret;
     };
 
     # Mounts to /etc/ssh
-    kubernetes.resources.secrets.sshd = {
-      metadata.namespace = config.namespace;
+    Secret.sshd = {
       stringData = {
         authorized_keys = builtins.readFile ../id_ed25519.pub;
         id_ed25519 = builtins.readFile ../id_ed25519;
@@ -38,8 +36,7 @@
       };
     };
 
-    kubernetes.resources.statefulSets.nix-cache = {
-      metadata.namespace = config.namespace;
+    StatefulSet.nix-cache = {
       spec = {
         serviceName = "nix-cache";
         replicas = 1;
@@ -47,72 +44,78 @@
         template = {
           metadata.labels.app = "nix-cache";
           spec = {
-            initContainers.populate-nix = {
-              command = [ "initCopy" ];
-              image = "dramforever/scratch@sha256:adf10351862ad5351ac2e714e04a0afb020b9df658ac99a07cbf49c0e18f8e43";
-              env = [
-                {
-                  name = "PATH";
-                  value = "/nix/var/result/bin";
-                }
-              ];
-              volumeMounts = [
-                {
-                  name = "nix-config";
-                  mountPath = "/etc/nix";
-                }
-                {
-                  name = "nix-csi";
-                  mountPath = "/nix";
-                }
-                {
-                  name = "nix-cache";
-                  mountPath = "/nix-volume";
-                }
-              ];
-            };
-            containers.nix-serve = {
-              command = [ "dinixLauncher" ];
-              image = "dramforever/scratch@sha256:adf10351862ad5351ac2e714e04a0afb020b9df658ac99a07cbf49c0e18f8e43";
-              env = [
-                {
-                  name = "PATH";
-                  value = "/nix/var/result/bin";
-                }
-                {
-                  name = "HOME";
-                  value = "/var/empty";
-                }
-                {
-                  name = "NIX_SECRET_KEY_FILE";
-                  value = "/etc/nix-serve/secret";
-                }
-              ];
-              ports = [
-                {
-                  containerPort = 80;
-                  name = "http";
-                }
-              ];
-              volumeMounts = [
-                {
-                  name = "nix-config";
-                  mountPath = "/etc/nix";
-                }
-                {
-                  name = "nix-cache";
-                  mountPath = "/nix";
-                }
-                {
-                  name = "nix-serve";
-                  mountPath = "/etc/nix-serve";
-                }
-                {
-                  name = "sshd";
-                  mountPath = "/etc/ssh-mount";
-                }
-              ];
-            };
+            initContainers = [
+              {
+                name = "populate-nix";
+                command = [ "initCopy" ];
+                image = "dramforever/scratch@sha256:adf10351862ad5351ac2e714e04a0afb020b9df658ac99a07cbf49c0e18f8e43";
+                env = [
+                  {
+                    name = "PATH";
+                    value = "/nix/var/result/bin";
+                  }
+                ];
+                volumeMounts = [
+                  {
+                    name = "nix-config";
+                    mountPath = "/etc/nix";
+                  }
+                  {
+                    name = "nix-csi";
+                    mountPath = "/nix";
+                  }
+                  {
+                    name = "nix-cache";
+                    mountPath = "/nix-volume";
+                  }
+                ];
+              }
+            ];
+            containers = [
+              {
+                name = "nix-serve";
+                command = [ "dinixLauncher" ];
+                image = "dramforever/scratch@sha256:adf10351862ad5351ac2e714e04a0afb020b9df658ac99a07cbf49c0e18f8e43";
+                env = [
+                  {
+                    name = "PATH";
+                    value = "/nix/var/result/bin";
+                  }
+                  {
+                    name = "HOME";
+                    value = "/var/empty";
+                  }
+                  {
+                    name = "NIX_SECRET_KEY_FILE";
+                    value = "/etc/nix-serve/secret";
+                  }
+                ];
+                ports = [
+                  {
+                    containerPort = 80;
+                    name = "http";
+                  }
+                ];
+                volumeMounts = [
+                  {
+                    name = "nix-config";
+                    mountPath = "/etc/nix";
+                  }
+                  {
+                    name = "nix-cache";
+                    mountPath = "/nix";
+                  }
+                  {
+                    name = "nix-serve";
+                    mountPath = "/etc/nix-serve";
+                  }
+                  {
+                    name = "sshd";
+                    mountPath = "/etc/ssh-mount";
+                  }
+                ];
+              }
+            ];
             volumes = [
               {
                 name = "nix-config";
@@ -131,7 +134,7 @@
                 csi = {
                   driver = "nix.csi.store";
                   readOnly = true;
-                  volumeAttributes.expr = builtins.readFile ../guests/binary-cache.nix;
+                  volumeAttributes.expression = builtins.readFile ../guests/binary-cache.nix;
                 };
               }
               {
@@ -156,8 +159,7 @@
       };
     };
 
-    kubernetes.resources.services.nix-cache = {
-      metadata.namespace = config.namespace;
+    Service.nix-cache = {
       spec = {
         selector.app = "nix-cache";
         ports = [

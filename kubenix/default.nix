@@ -1,10 +1,8 @@
 {
-  kubenix,
   ...
 }:
 {
   imports = [
-    kubenix.modules.k8s
     ./options.nix
     ./namespace.nix
     ./daemonset.nix
@@ -13,5 +11,4 @@
     ./config.nix
     ./cache.nix
   ];
-  config.kubenix.project = "nix-csi";
 }

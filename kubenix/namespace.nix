@@ -7,9 +7,7 @@ let
   namespace = config.namespace;
 in
 {
-  config = lib.mkIf (namespace != "default") {
-    kubernetes.api.resources.namespaces.${namespace} = {
-      metadata.name = namespace;
-    };
+  config.kubernetes.resources.none = lib.mkIf (namespace != "default") {
+    Namespace.${namespace} = { };
   };
 }

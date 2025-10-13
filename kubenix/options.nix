@@ -1,14 +1,10 @@
 { lib, ... }:
-let
-  nsVar = builtins.getEnv "CSINS";
-  nsFromEnv = if builtins.stringLength nsVar > 0 then nsVar else "default";
-in
 {
   options = {
     namespace = lib.mkOption {
       description = "Which namespace to deploy cknix resources too";
       type = lib.types.str;
-      default = nsFromEnv;
+      default = "default";
     };
     enableBinaryCache = lib.mkOption {
       description = "Enable deployment of a cluster-internal nix binary cache";
