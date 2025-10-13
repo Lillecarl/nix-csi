@@ -85,6 +85,8 @@ let
                   ''
                     #! ${lib.getExe' pkgs.execline "execlineb"}
                     importas -S HOME
+                    foreground { mkdir --parents /usr/bin }
+                    foreground { ln --symbolic --force ${lib.getExe' pkgs.uutils-coreutils-noprefix "env"} /usr/bin/env }
                     foreground { mkdir --parents /tmp }
                     foreground { mkdir --parents /tmp/log }
                     foreground { mkdir --parents ''${HOME} }
