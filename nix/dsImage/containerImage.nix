@@ -23,11 +23,9 @@ let
       '';
   rootEnv = pkgs.buildEnv {
     name = "rootEnv";
-    paths = rootPaths;
+    paths = rootPaths ++ utilPaths;
   };
-  rootPaths = [
-    dinixEval.config.containerLauncher
-    dinixEval.config.package
+  utilPaths = [
     pkgs.openssh
     pkgs.rsync
     pkgs.lix
@@ -35,6 +33,10 @@ let
     pkgs.gitMinimal
     pkgs.fishMinimal
     pkgs.uutils-coreutils-noprefix
+  ];
+  rootPaths = [
+    dinixEval.config.containerLauncher
+    dinixEval.config.package
   ];
 in
 nix2container.buildImage {
@@ -47,10 +49,10 @@ nix2container.buildImage {
     ];
     Entrypoint = [ (lib.getExe initCopy) ];
   };
-  layers = [
-    (nix2container.buildLayer {
-      deps = [ dinixEval.config.containerLauncher ];
-      maxLayers = 110;
-    })
-  ];
+  layers = lib.map (
+    package:
+    nix2container.buildLayer {
+      deps = [ package ];
+    }
+  ) utilPaths;
 }

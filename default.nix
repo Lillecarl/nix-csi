@@ -99,7 +99,7 @@ let
               nix:${image}
               oci-archive:''${fifo}:${imageRef}
           }
-          export CONTAINERD_ADDRESS /run/k3s/containerd/containerd.sock
+          export CONTAINERD_ADDRESS /run/containerd/containerd.sock
 
           foreground {
             sudo -E ${lib.getExe pkgs.nerdctl}
@@ -155,10 +155,11 @@ in
 on
 // {
   inherit off;
-  merge =
+  upload =
     let
       version = "0.1.0";
       url = system: "quay.io/lillecarl/nix-csi:${version}-${system}";
+      manifest = "quay.io/lillecarl/nix-csi:${version}";
     in
     pkgs.writeScriptBin "merge" # fish
       ''
@@ -166,18 +167,18 @@ on
         set buildDir (mktemp -d ocibuild.XXXXXX)
         echo $buildDir
         function cleanup --on-event fish_exit
-          # rm -rf $buildDir
+          rm -rf $buildDir
         end
         ${lib.getExe on.image.copyTo} oci-archive:$buildDir/on:${url on.pkgs.system}
         ${lib.getExe off.image.copyTo} oci-archive:$buildDir/off:${url off.pkgs.system}
         podman load --input $buildDir/on
         podman load --input $buildDir/off
-        podman manifest rm quay.io/lillecarl/nix-csi:${version}
-        podman manifest create quay.io/lillecarl/nix-csi:${version}
-        podman manifest add quay.io/lillecarl/nix-csi:${version} ${url on.pkgs.system}
-        podman manifest add quay.io/lillecarl/nix-csi:${version} ${url off.pkgs.system}
         podman push ${url on.pkgs.system}
         podman push ${url off.pkgs.system}
-        podman manifest push quay.io/lillecarl/nix-csi:0.1.0
+        podman manifest rm ${manifest}
+        podman manifest create ${manifest}
+        podman manifest add ${manifest} ${url on.pkgs.system}
+        podman manifest add ${manifest} ${url off.pkgs.system}
+        podman manifest push ${manifest}
       '';
 }

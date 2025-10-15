@@ -26,8 +26,7 @@ KUBE_NODE_NAME = os.environ.get("KUBE_NODE_NAME")
 if KUBE_NODE_NAME is None:
     raise Exception("Please make sure KUBE_NODE_NAME is set")
 
-# Paths we base everything on. Remember that these are CSI pod paths not
-# node paths.
+# Paths we base everything on. Remember that these are CSI pod paths not node paths.
 CSI_ROOT = Path("/nix/var/nix-csi")
 CSI_VOLUMES = CSI_ROOT / "volumes"
 NIX_GCROOTS = Path("/nix/var/nix/gcroots/nix-csi")
