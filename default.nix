@@ -2,21 +2,33 @@
   # Do a dance where we try to use NIX_PATH if it exists.
   pkgs ?
     let
-      ft = import (builtins.fetchTree {
+      nimport = builtins.tryEval (import <nixpkgs> { });
+    in
+    if nimport.success then
+      nimport.value
+    else
+      import (builtins.fetchTree {
         type = "github";
         owner = "NixOS";
         repo = "nixpkgs";
         ref = "nixos-unstable";
-      }) { };
-      np = import <nixpkgs> { };
-      npt = builtins.tryEval np;
-    in
-    if npt.success then npt.value else ft,
+      }) { },
 }:
 let
   lib = pkgs.lib;
 
-  dinix = /home/lillecarl/Code/dinix;
+  dinix =
+    let
+      path = /home/lillecarl/Code/dinix;
+    in
+    if builtins.pathExists path then
+      path
+    else
+      import (builtins.fetchTree {
+        type = "github";
+        owner = "lillecarl";
+        repo = "dinix";
+      }) { };
 
   n2cSrc = builtins.fetchTree {
     type = "github";
