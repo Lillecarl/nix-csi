@@ -50,7 +50,7 @@
             containers = [
               {
                 name = "nix-csi-node";
-                image = "dramforever/scratch@sha256:adf10351862ad5351ac2e714e04a0afb020b9df658ac99a07cbf49c0e18f8e43";
+                image = "quay.io/lillecarl/nix-csi/scratch:1.0.0";
                 securityContext.privileged = true;
                 command = [ "dinixLauncher" ];
                 env = [

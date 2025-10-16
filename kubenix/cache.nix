@@ -48,7 +48,7 @@
               {
                 name = "populate-nix";
                 command = [ "initCopy" ];
-                image = "dramforever/scratch@sha256:adf10351862ad5351ac2e714e04a0afb020b9df658ac99a07cbf49c0e18f8e43";
+                image = "quay.io/lillecarl/nix-csi/scratch:1.0.0";
                 env = [
                   {
                     name = "PATH";
@@ -75,7 +75,7 @@
               {
                 name = "nix-serve";
                 command = [ "dinixLauncher" ];
-                image = "dramforever/scratch@sha256:adf10351862ad5351ac2e714e04a0afb020b9df658ac99a07cbf49c0e18f8e43";
+                image = "quay.io/lillecarl/nix-csi/scratch:1.0.0";
                 env = [
                   {
                     name = "PATH";
