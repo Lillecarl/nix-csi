@@ -89,7 +89,7 @@ let
       inherit (n2c) nix2container;
     };
     imageToContainerd = copyToContainerd image;
-    imageRef = "bogus.io/${image.imageRefUnsafe}";
+    imageRef = "quay.io/lillecarl/nix-csi/nix-csi/${nix-csi.version}";
 
     copyToContainerd =
       image:
@@ -156,6 +156,7 @@ let
         python
         n2c.skopeo-nix2container
         pkgs.kluctl
+        pkgs.buildah
       ];
     };
   };
@@ -167,30 +168,52 @@ in
 on
 // {
   inherit off;
-  upload =
+  uploadCsi =
     let
-      version = "0.1.0";
-      url = system: "quay.io/lillecarl/nix-csi:${version}-${system}";
-      manifest = "quay.io/lillecarl/nix-csi:${version}";
+      csiUrl = system: "quay.io/lillecarl/nix-csi/nix-csi:${on.nix-csi.version}-${system}";
+      csiManifest = "quay.io/lillecarl/nix-csi/nix-csi:${on.nix-csi.version}";
     in
     pkgs.writeScriptBin "merge" # fish
       ''
         #! ${lib.getExe pkgs.fishMinimal}
         set buildDir (mktemp -d ocibuild.XXXXXX)
         echo $buildDir
+        mkdir -p $buildDir
         function cleanup --on-event fish_exit
           rm -rf $buildDir
         end
-        ${lib.getExe on.image.copyTo} oci-archive:$buildDir/on:${url on.pkgs.system}
-        ${lib.getExe off.image.copyTo} oci-archive:$buildDir/off:${url off.pkgs.system}
-        podman load --input $buildDir/on
-        podman load --input $buildDir/off
-        podman push ${url on.pkgs.system}
-        podman push ${url off.pkgs.system}
-        podman manifest rm ${manifest}
-        podman manifest create ${manifest}
-        podman manifest add ${manifest} ${url on.pkgs.system}
-        podman manifest add ${manifest} ${url off.pkgs.system}
-        podman manifest push ${manifest}
+        # Build and publish nix-csi image(s)
+        ${lib.getExe on.image.copyTo} oci-archive:$buildDir/csi-${on.pkgs.system}:${csiUrl on.pkgs.system}
+        ${lib.getExe off.image.copyTo} oci-archive:$buildDir/csi-${off.pkgs.system}:${csiUrl off.pkgs.system}
+        podman load --input $buildDir/csi-${on.pkgs.system}
+        podman load --input $buildDir/csi-${off.pkgs.system}
+        podman push ${csiUrl on.pkgs.system}
+        podman push ${csiUrl off.pkgs.system}
+        podman manifest rm ${csiManifest}
+        podman manifest create ${csiManifest}
+        podman manifest add ${csiManifest} ${csiUrl on.pkgs.system}
+        podman manifest add ${csiManifest} ${csiUrl off.pkgs.system}
+        podman manifest push ${csiManifest}
+      '';
+  uploadScratch =
+    let
+      scratchVersion = "1.0.0";
+      scratchUrl = system: "quay.io/lillecarl/nix-csi/scratch:${scratchVersion}-${system}";
+      scratchManifest = "quay.io/lillecarl/nix-csi/scratch:${scratchVersion}";
+    in
+    pkgs.writeScriptBin "merge" # bash
+      ''
+        #! ${pkgs.runtimeShell}
+        set -x
+        # Build and publish scratch image(s)
+        buildah commit $(buildah from --platform linux/amd64 scratch) ${scratchUrl on.pkgs.system}
+        buildah push ${scratchUrl on.pkgs.system}
+        buildah commit $(buildah from --platform linux/arm64 scratch) ${scratchUrl off.pkgs.system}
+        buildah push ${scratchUrl off.pkgs.system}
+        buildah manifest rm ${scratchManifest}
+        buildah manifest create ${scratchManifest}
+        buildah manifest add ${scratchManifest} ${scratchUrl on.pkgs.system}
+        buildah manifest add ${scratchManifest} ${scratchUrl off.pkgs.system}
+        buildah manifest push ${scratchManifest}
       '';
 }
