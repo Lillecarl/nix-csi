@@ -214,9 +214,7 @@ class NodeServicer(csi_grpc.NodeBase):
                     "builtins.currentSystem",
                 )
             ).stdout
-
-            # Fetch storePath from caches
-            build = await run_console(
+            buildCommand = [
                 "nix",
                 "build",
                 "--impure",
@@ -225,14 +223,27 @@ class NodeServicer(csi_grpc.NodeBase):
                 gcPath,
                 # "installable"
                 storePath,
-            )
+            ]
+
+            # Fetch storePath from caches
+            build = await run_console(*buildCommand)
             if build.returncode != 0:
-                logger.error(f"nix build (cache fetch) failed: {build.returncode=}")
-                # Use GRPCError here, we don't need to log output again
-                raise GRPCError(
-                    Status.INVALID_ARGUMENT,
-                    f"nix build (cache fetch) failed: {build.returncode=} {build.stderr=}",
-                )
+                buildCommand += [
+                    "--substituters",
+                    "https://cache.nixos.org",
+                ]
+                if os.getenv("BUILD_CACHE") == "true":
+                    build = await run_console(*buildCommand)
+                if build.returncode != 0:
+                    logger.error(
+                        f"nix build (expression) failed: {build.returncode=}"
+                    )
+                    # Use GRPCError here, we don't need to log output again
+                    raise GRPCError(
+                        Status.INVALID_ARGUMENT,
+                        f"nix build (expression) failed: {build.returncode=} {build.stderr=}",
+                    )
+
             packagePath = Path(build.stdout.splitlines()[0])
         elif expression is not None:
             logger.debug(f"{expression=}")
@@ -241,8 +252,7 @@ class NodeServicer(csi_grpc.NodeBase):
                 f.write(expression)
                 f.flush()
 
-                # Build expression
-                build = await run_console(
+                buildCommand = [
                     "nix",
                     "build",
                     "--impure",
@@ -252,14 +262,27 @@ class NodeServicer(csi_grpc.NodeBase):
                     # "installable"
                     "--file",
                     expressionFile,
-                )
+                ]
+
+                # Build expression
+                build = await run_console(*buildCommand)
                 if build.returncode != 0:
-                    logger.error(f"nix build (expression) failed: {build.returncode=}")
-                    # Use GRPCError here, we don't need to log output again
-                    raise GRPCError(
-                        Status.INVALID_ARGUMENT,
-                        f"nix build (expression) failed: {build.returncode=} {build.stderr=}",
-                    )
+                    buildCommand += [
+                        "--substituters",
+                        "https://cache.nixos.org",
+                    ]
+                    if os.getenv("BUILD_CACHE") == "true":
+                        build = await run_console(*buildCommand)
+                    if build.returncode != 0:
+                        logger.error(
+                            f"nix build (expression) failed: {build.returncode=}"
+                        )
+                        # Use GRPCError here, we don't need to log output again
+                        raise GRPCError(
+                            Status.INVALID_ARGUMENT,
+                            f"nix build (expression) failed: {build.returncode=} {build.stderr=}",
+                        )
+
                 packagePath = Path(build.stdout.splitlines()[0])
         else:
             raise GRPCError(
