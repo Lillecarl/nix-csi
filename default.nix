@@ -89,7 +89,7 @@ let
       inherit (n2c) nix2container;
     };
     imageToContainerd = copyToContainerd image;
-    imageRef = "quay.io/lillecarl/nix-csi/nix-csi/${nix-csi.version}";
+    imageRef = "quay.io/nix-csi/nix-csi:${nix-csi.version}";
 
     copyToContainerd =
       image:
@@ -114,9 +114,9 @@ let
           export CONTAINERD_ADDRESS /run/containerd/containerd.sock
 
           foreground {
-            sudo -E ${lib.getExe pkgs.nerdctl}
+            sudo -E ${lib.getExe' pkgs.containerd "ctr"}
               --namespace k8s.io
-              load --input ''${fifo}
+              images import ''${fifo}
           }
           rm ''${fifo}
         '';
@@ -170,18 +170,21 @@ on
   inherit off;
   uploadCsi =
     let
-      csiUrl = system: "quay.io/lillecarl/nix-csi/nix-csi:${on.nix-csi.version}-${system}";
-      csiManifest = "quay.io/lillecarl/nix-csi/nix-csi:${on.nix-csi.version}";
+      csiUrl = system: "quay.io/nix-csi/nix-csi:${on.nix-csi.version}-${system}";
+      csiManifest = "quay.io/nix-csi/nix-csi:${on.nix-csi.version}";
     in
-    pkgs.writeScriptBin "merge" # fish
+    pkgs.writeScriptBin "merge" # bash
       ''
-        #! ${lib.getExe pkgs.fishMinimal}
-        set buildDir (mktemp -d ocibuild.XXXXXX)
+        #! ${pkgs.runtimeShell}
+        set -euo pipefail
+        set -x
+        buildDir=$(mktemp -d ocibuild.XXXXXX)
         echo $buildDir
         mkdir -p $buildDir
-        function cleanup --on-event fish_exit
-          rm -rf $buildDir
-        end
+        cleanup() {
+          rm -rf "$buildDir"
+        }
+        trap cleanup EXIT
         # Build and publish nix-csi image(s)
         ${lib.getExe on.image.copyTo} oci-archive:$buildDir/csi-${on.pkgs.system}:${csiUrl on.pkgs.system}
         ${lib.getExe off.image.copyTo} oci-archive:$buildDir/csi-${off.pkgs.system}:${csiUrl off.pkgs.system}
@@ -189,7 +192,7 @@ on
         podman load --input $buildDir/csi-${off.pkgs.system}
         podman push ${csiUrl on.pkgs.system}
         podman push ${csiUrl off.pkgs.system}
-        podman manifest rm ${csiManifest}
+        podman manifest rm ${csiManifest} &>/dev/null || true
         podman manifest create ${csiManifest}
         podman manifest add ${csiManifest} ${csiUrl on.pkgs.system}
         podman manifest add ${csiManifest} ${csiUrl off.pkgs.system}
@@ -198,19 +201,20 @@ on
   uploadScratch =
     let
       scratchVersion = "1.0.0";
-      scratchUrl = system: "quay.io/lillecarl/nix-csi/scratch:${scratchVersion}-${system}";
-      scratchManifest = "quay.io/lillecarl/nix-csi/scratch:${scratchVersion}";
+      scratchUrl = system: "quay.io/nix-csi/scratch:${scratchVersion}-${system}";
+      scratchManifest = "quay.io/nix-csi/scratch:${scratchVersion}";
     in
     pkgs.writeScriptBin "merge" # bash
       ''
         #! ${pkgs.runtimeShell}
+        set -euo pipefail
         set -x
         # Build and publish scratch image(s)
         buildah commit $(buildah from --platform linux/amd64 scratch) ${scratchUrl on.pkgs.system}
         buildah push ${scratchUrl on.pkgs.system}
         buildah commit $(buildah from --platform linux/arm64 scratch) ${scratchUrl off.pkgs.system}
         buildah push ${scratchUrl off.pkgs.system}
-        buildah manifest rm ${scratchManifest}
+        buildah manifest rm ${scratchManifest} &>/dev/null || true
         buildah manifest create ${scratchManifest}
         buildah manifest add ${scratchManifest} ${scratchUrl on.pkgs.system}
         buildah manifest add ${scratchManifest} ${scratchUrl off.pkgs.system}

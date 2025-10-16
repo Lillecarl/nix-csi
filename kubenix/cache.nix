@@ -48,7 +48,7 @@
               {
                 name = "populate-nix";
                 command = [ "initCopy" ];
-                image = "quay.io/lillecarl/nix-csi/scratch:1.0.0";
+                image = "quay.io/nix-csi/scratch:1.0.0";
                 env = [
                   {
                     name = "PATH";
@@ -75,7 +75,7 @@
               {
                 name = "nix-serve";
                 command = [ "dinixLauncher" ];
-                image = "quay.io/lillecarl/nix-csi/scratch:1.0.0";
+                image = "quay.io/nix-csi/scratch:1.0.0";
                 env = [
                   {
                     name = "PATH";
