@@ -57,10 +57,6 @@
                 ];
                 volumeMounts = [
                   {
-                    name = "nix-config";
-                    mountPath = "/etc/nix";
-                  }
-                  {
                     name = "nix-csi";
                     mountPath = "/nix";
                   }
