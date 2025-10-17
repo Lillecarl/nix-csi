@@ -133,7 +133,7 @@ in
                   name = "nix-csi";
                   csi = {
                     driver = "nix.csi.store";
-                    readOnly = true;
+                    readOnly = false;
                     volumeAttributes.expression = builtins.readFile ../guests/cache.nix;
                   };
                 }

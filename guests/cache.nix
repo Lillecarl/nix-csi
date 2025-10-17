@@ -13,6 +13,18 @@ let
   };
   pkgs = import nixpkgs { };
   lib = pkgs.lib;
+  # This should be in sync with the one from ../pkgs/default.nix we must copy it
+  # here since this is executed as a standalone expression without the repo
+  nix_init_db =
+    pkgs.writeScriptBin "nix_init_db" # execline
+      ''
+        #! ${lib.getExe' pkgs.execline "execlineb"} -s1
+        emptyenv -p
+        pipeline { nix-store --dump-db $@ }
+        export USER nobody
+        export NIX_STATE_DIR $1
+        exec nix-store --load-db
+      '';
   fakeNss = pkgs.buildEnv {
     name = "fakeNss";
     paths =
@@ -40,15 +52,21 @@ let
   };
 
   initCopy =
-    pkgs.writeScriptBin "initCopy" # execline
+    pkgs.writeScriptBin "initCopy" # bash
       ''
-        #! ${lib.getExe' pkgs.execline "execlineb"}
+        #! ${pkgs.runtimeShell}
+        set -euo pipefail
+        set -x
+        # Make fakeNss available so we can use nix_init_db
+        rsync --verbose --archive ${fakeNss}/ /
         # Remove result symlink and let rsync overwrite it. This way we get
         # persistence while allowing reconfiguration by relinking a new result.
-        foreground { unlink /nix-volume/var/result }
+        unlink /nix-volume/var/result || true
         # rsync nix-csi supplied volume to /nix-volume which will be mounted as
         # /nix in the runtime container.
-        ${lib.getExe pkgs.rsync} --archive --ignore-existing --one-file-system /nix/ /nix-volume/
+        rsync --archive --ignore-existing --one-file-system /nix/ /nix-volume/
+        # Import Nix database from bootstrapping mount
+        nix_init_db /nix-volume/var/nix $(nix path-info --all)
       '';
 
   dinixEval = (
@@ -81,19 +99,18 @@ let
             services.setup = {
               type = "scripted";
               command = lib.getExe (
-                pkgs.writeScriptBin "setup" # execline
+                pkgs.writeScriptBin "setup" # bash
                   ''
-                    #! ${lib.getExe' pkgs.execline "execlineb"}
-                    importas -S HOME
-                    foreground { mkdir --parents /usr/bin }
-                    foreground { ln --symbolic --force ${lib.getExe' pkgs.uutils-coreutils-noprefix "env"} /usr/bin/env }
-                    foreground { mkdir --parents /tmp }
-                    foreground { mkdir --parents /tmp/log }
-                    foreground { mkdir --parents ''${HOME} }
-                    foreground { rsync --verbose --archive --copy-links ${fakeNss}/ / }
-                    foreground { rsync --verbose --archive ${pkgs.dockerTools.caCertificates}/ / }
+                    #! ${pkgs.runtimeShell}
+                    mkdir --parents /usr/bin
+                    ln --symbolic --force ${lib.getExe' pkgs.uutils-coreutils-noprefix "env"} /usr/bin/env
+                    mkdir --parents /tmp
+                    mkdir --parents /tmp/log
+                    mkdir --parents ''${HOME}
+                    rsync --verbose --archive --copy-links ${fakeNss}/ /
+                    rsync --verbose --archive ${pkgs.dockerTools.caCertificates}/ /
                     # Tricking OpenSSH's security policies
-                    foreground { rsync --archive --copy-links --chmod=600 /etc/ssh-mount/ /etc/ssh/ }
+                    rsync --archive --copy-links --chmod=600 /etc/ssh-mount/ /etc/ssh/
                   ''
               );
             };
@@ -105,17 +122,18 @@ let
 in
 pkgs.buildEnv {
   name = "binary-cache-env";
-  paths = [
+  paths = with pkgs; [
     initCopy
-    pkgs.rsync
-    pkgs.uutils-coreutils-noprefix
-    pkgs.fishMinimal
-    pkgs.gitMinimal
-    pkgs.execline
-    pkgs.lix
-    pkgs.ncdu
-    pkgs.openssh
-    pkgs.curl
+    nix_init_db
+    rsync
+    uutils-coreutils-noprefix
+    fishMinimal
+    gitMinimal
+    execline
+    lix
+    ncdu
+    openssh
+    curl
     dinixEval.config.package
     dinixEval.config.containerLauncher
   ];
