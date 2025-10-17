@@ -1,6 +1,10 @@
 { lib, ... }:
 {
-  options = {
+  options.nix-csi = {
+    enable = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+    };
     namespace = lib.mkOption {
       description = "Which namespace to deploy cknix resources too";
       type = lib.types.str;

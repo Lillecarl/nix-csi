@@ -74,7 +74,7 @@ let
         ./kubenix
         {
           config = {
-            image = imageRef;
+            nix-csi.image = imageRef;
             kluctl.discriminator = "nix-csi";
           };
         }

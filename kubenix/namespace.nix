@@ -1,13 +1,12 @@
-{
-  config,
-  lib,
-  ...
-}:
+{ config, lib, ... }:
 let
-  namespace = config.namespace;
+  cfg = config.nix-csi;
+  namespace = cfg.namespace;
 in
 {
-  config.kubernetes.resources.none = lib.mkIf (namespace != "default") {
-    Namespace.${namespace} = { };
+  config = lib.mkIf cfg.enable {
+    kubernetes.resources.none = lib.mkIf (namespace != "default") {
+      Namespace.${namespace} = { };
+    };
   };
 }
