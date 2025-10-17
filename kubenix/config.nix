@@ -5,6 +5,8 @@
     build-users-group = root
     # Auto allocare uids so we don't have to create lots of users in containers
     auto-allocate-uids = true
+    # This supposedly helps with the sticky cache issue
+    fallback = true
     # Enable common features
     experimental-features = nix-command flakes auto-allocate-uids fetch-closure pipe-operator
     # binary cache configuration
