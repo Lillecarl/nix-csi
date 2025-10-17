@@ -6,7 +6,7 @@ in
   config = lib.mkIf cfg.enable {
     kubernetes.resources.${cfg.namespace}.ConfigMap.nix-config.data."nix.conf" = ''
       # Use root as builder since that's the only user in the container.
-      build-users-group = root
+      build-users-group = nobody
       # Auto allocare uids so we don't have to create lots of users in containers
       auto-allocate-uids = true
       # This supposedly helps with the sticky cache issue
