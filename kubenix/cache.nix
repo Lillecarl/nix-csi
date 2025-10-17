@@ -134,7 +134,7 @@ in
                   csi = {
                     driver = "nix.csi.store";
                     readOnly = true;
-                    volumeAttributes.expression = builtins.readFile ../guests/binary-cache.nix;
+                    volumeAttributes.expression = builtins.readFile ../guests/cache.nix;
                   };
                 }
                 {
