@@ -15,6 +15,10 @@
       }) { },
 }:
 let
+  pkgs' = pkgs.extend (import ./pkgs);
+in
+let
+  pkgs = pkgs';
   lib = pkgs.lib;
 
   dinix =

@@ -235,9 +235,7 @@ class NodeServicer(csi_grpc.NodeBase):
                 if os.getenv("BUILD_CACHE") == "true":
                     build = await run_console(*buildCommand)
                 if build.returncode != 0:
-                    logger.error(
-                        f"nix build (expression) failed: {build.returncode=}"
-                    )
+                    logger.error(f"nix build (expression) failed: {build.returncode=}")
                     # Use GRPCError here, we don't need to log output again
                     raise GRPCError(
                         Status.INVALID_ARGUMENT,
@@ -360,7 +358,9 @@ class NodeServicer(csi_grpc.NodeBase):
 
             # Create Nix database
             # This is an execline script that runs nix-store --dump-db | NIX_STATE_DIR=something nix-store --load-db
-            nix_init_db = await run_captured("nix_init_db", NIX_STATE_DIR, *paths)
+            nix_init_db = await run_captured(
+                "nix_init_db", "/nix/var/nix", NIX_STATE_DIR, *paths
+            )
             if nix_init_db.returncode != 0:
                 raise NixCsiError(
                     Status.INTERNAL,
