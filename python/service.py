@@ -359,7 +359,7 @@ class NodeServicer(csi_grpc.NodeBase):
             # Create Nix database
             # This is an execline script that runs nix-store --dump-db | NIX_STATE_DIR=something nix-store --load-db
             nix_init_db = await run_captured(
-                "nix_init_db", "/nix/var/nix", NIX_STATE_DIR, *paths
+                "nix_init_db", NIX_STATE_DIR, *paths
             )
             if nix_init_db.returncode != 0:
                 raise NixCsiError(
