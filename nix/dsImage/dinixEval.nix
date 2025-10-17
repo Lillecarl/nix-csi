@@ -43,18 +43,19 @@ import dinix {
           type = "scripted";
           options = [ "shares-console" ];
           command = lib.getExe (
-            pkgs.writeScriptBin "setup" # execline
+            pkgs.writeScriptBin "setup" # bash
               ''
-                #! ${lib.getExe' pkgs.execline "execlineb"}
-                importas -S HOME
-                foreground { mkdir --parents /usr/bin }
-                foreground { ln --symbolic --force ${lib.getExe' pkgs.uutils-coreutils-noprefix "env"} /usr/bin/env }
-                foreground { mkdir --parents /tmp }
-                foreground { mkdir --parents ''${HOME} }
-                foreground { rsync --verbose --archive ${fakeNss}/ / }
-                foreground { rsync --verbose --archive ${pkgs.dockerTools.caCertificates}/ / }
+                #! ${pkgs.runtimeShell}
+                set -euo pipefail
+                set -x
+                mkdir --parents /usr/bin
+                ln --symbolic --force ${lib.getExe' pkgs.uutils-coreutils-noprefix "env"} /usr/bin/env
+                mkdir --parents /tmp
+                mkdir --parents ''${HOME}
+                rsync --verbose --archive ${fakeNss}/ /
+                rsync --verbose --archive ${pkgs.dockerTools.caCertificates}/ /
                 # Tricking OpenSSH's security policies
-                foreground { rsync --archive --copy-links --chmod=600 /etc/sshc/ ''${HOME}/.ssh/ }
+                rsync --archive --copy-links --chmod=600 /etc/sshc/ ''${HOME}/.ssh/
               ''
           );
         };
