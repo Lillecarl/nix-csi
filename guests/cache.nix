@@ -129,7 +129,6 @@ pkgs.buildEnv {
     uutils-coreutils-noprefix
     fishMinimal
     gitMinimal
-    execline
     lix
     ncdu
     openssh
