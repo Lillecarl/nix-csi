@@ -101,11 +101,11 @@ in
                       name = "nix-config";
                       mountPath = "/etc/nix";
                     }
-                    {
-                      name = "sshc";
-                      mountPath = "/etc/sshc";
-                    }
-                  ];
+                  ]
+                  ++ lib.optional cfg.enableBinaryCache {
+                    name = "sshc";
+                    mountPath = "/etc/sshc";
+                  };
                 }
                 {
                   name = "csi-node-driver-registrar";
@@ -182,11 +182,11 @@ in
                   name = "nix-config";
                   configMap.name = "nix-config";
                 }
-                {
-                  name = "sshc";
-                  secret.secretName = "sshc";
-                }
-              ];
+              ]
+              ++ lib.optional cfg.enableBinaryCache {
+                name = "sshc";
+                secret.secretName = "sshc";
+              };
             };
           };
         };
