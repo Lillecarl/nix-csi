@@ -46,6 +46,7 @@ let
   };
   pkgsCross = import pkgs.path {
     system = crossAttrs.${builtins.currentSystem};
+    overlays = [ (import ./pkgs) ];
   };
   persys = pkgs: rec {
     inherit pkgs lib;
