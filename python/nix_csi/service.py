@@ -472,8 +472,8 @@ class NodeServicer(csi_grpc.NodeBase):
             except Exception as ex:
                 errors.append(f"volume cleanup failed: {ex}")
 
-            if errors:
-                raise NixCsiError(Status.INTERNAL, "; ".join(errors))
+        if errors:
+            raise NixCsiError(Status.INTERNAL, "; ".join(errors))
 
         reply = csi_pb2.NodeUnpublishVolumeResponse()
         await stream.send_message(reply)
