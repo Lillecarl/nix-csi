@@ -1,10 +1,11 @@
 {
   buildPythonApplication,
-  setuptools-scm,
+  hatchling,
   csi-proto-python, # CSI GRPC bindings
   util-linuxMinimal, # mount, umount
   uutils-coreutils-noprefix, # ln
   rsync, # hardlinking
+  openssh, # Copying to cache
   nix_init_db, # Import from one nix DB to another
 }:
 let
@@ -16,8 +17,11 @@ buildPythonApplication {
   inherit pname version;
   src = ./.;
   pyproject = true;
-  nativeBuildInputs = [ setuptools-scm ];
-  propagatedBuildInputs = [
+  build-system = [
+    hatchling
+  ];
+  dependencies = [
+    openssh
     rsync
     uutils-coreutils-noprefix
     nix_init_db
@@ -25,7 +29,4 @@ buildPythonApplication {
     util-linuxMinimal
   ];
   meta.mainProgram = "nix-csi";
-  passthru = {
-    inherit nix_init_db;
-  };
 }

@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "nix-csi"
@@ -15,10 +15,4 @@ license = { text = "MIT" }
 dependencies = []
 
 [project.scripts]
-nix-csi = "cli:main"
-
-[tool.setuptools.packages.find]
-include = ["*"]
-
-[tool.setuptools]
-py-modules = ["cli", "service"]
+nix-csi = "nix_csi.cli:main"

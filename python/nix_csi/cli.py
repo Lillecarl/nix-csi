@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import argparse
-import service
+from . import service
 
 
 def parse_args():
