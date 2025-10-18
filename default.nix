@@ -93,7 +93,7 @@ let
       inherit (n2c) nix2container;
     };
     imageToContainerd = copyToContainerd image;
-    imageRef = "quay.io/nix-csi/nix-csi:${nix-csi.version}";
+    imageRef = "quay.io/nix-csi/${image.imageRefUnsafe}";
 
     copyToContainerd =
       image:
