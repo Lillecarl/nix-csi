@@ -1,17 +1,5 @@
 let
-  nixpkgs = builtins.fetchTree {
-    type = "github";
-    owner = "NixOS";
-    repo = "nixpkgs";
-    ref = "nixos-unstable";
-  };
-  dinix = builtins.fetchTree {
-    type = "github";
-    owner = "lillecarl";
-    repo = "dinix";
-    ref = "main";
-  };
-  pkgs = import nixpkgs { };
+  pkgs = import <nixpkgs> { };
   lib = pkgs.lib;
   # This should be in sync with the one from ../pkgs/default.nix we must copy it
   # here since this is executed as a standalone expression without the repo
@@ -70,7 +58,7 @@ let
       '';
 
   dinixEval = (
-    import dinix {
+    import <dinix> {
       inherit pkgs;
       modules = [
         {
