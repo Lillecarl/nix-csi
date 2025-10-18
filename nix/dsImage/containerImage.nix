@@ -14,9 +14,20 @@ let
         #! ${pkgs.runtimeShell}
         set -euo pipefail
         set -x
+        export PATH=${
+          lib.makeBinPath (
+            with pkgs;
+            [
+              rsync
+              uutils-coreutils-noprefix
+              lix
+              nix_init_db
+            ]
+          )
+        }
         rsync --archive --ignore-existing --one-file-system /nix/ /nix-volume/
         # Link rootEnv to /nix/var/result
-        ln --symbolic --force --no-dereference ${rootEnv} /nix-volume/var/result
+        ln --symbolic --force ${rootEnv} /nix-volume/var/result
         # Import(merge) Nix database with paths from image
         nix_init_db /nix-volume/var/nix $(nix path-info --all)
         # Add gcroot for result, /nix/var/result will be available in the
@@ -24,43 +35,25 @@ let
         mkdir --parents /nix-volume/var/nix/gcroots/nix-csi
         ln --symbolic --force --no-dereference /nix/var/result /nix-volume/var/nix/gcroots/nix-csi/result
       '';
+
   rootEnv = pkgs.buildEnv {
     name = "rootEnv";
-    paths = rootPaths ++ utilPaths;
+    paths = with pkgs; [
+      # We only need containerWrapper, the rest are just for troubleshooting
+      # and development purposes
+      dinixEval.config.containerWrapper
+      fishMinimal
+      uutils-coreutils-noprefix
+      lix
+    ];
   };
-  utilPaths = with pkgs; [
-    nix_init_db
-    openssh
-    rsync
-    lix
-    util-linuxMinimal
-    gitMinimal
-    fishMinimal
-    uutils-coreutils-noprefix
-  ];
-  rootPaths = [
-    dinixEval.config.containerLauncher
-    dinixEval.config.package
-  ];
 in
 nix2container.buildImage {
   name = "nix-csi";
   initializeNixDatabase = true;
-  maxLayers = 120; # Does this include "layers?""
+  maxLayers = 120;
   # Include NSS so we can run Nix in the init container
-  copyToRoot = with pkgs; [
-    dockerTools.fakeNss
-  ];
-  config = {
-    Env = [
-      "PATH=${rootEnv}/bin"
-    ];
-    Entrypoint = [ (lib.getExe initCopy) ];
-  };
-  layers = lib.map (
-    package:
-    nix2container.buildLayer {
-      deps = [ package ];
-    }
-  ) utilPaths;
+  copyToRoot = with pkgs; [ dockerTools.fakeNss ];
+  # This images only function is to copy itself into a hostPath mount
+  config.Entrypoint = [ (lib.getExe initCopy) ];
 }

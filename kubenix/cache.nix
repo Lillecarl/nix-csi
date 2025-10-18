@@ -74,7 +74,7 @@ in
               containers = [
                 {
                   name = "nix-serve";
-                  command = [ "dinixLauncher" ];
+                  command = [ "dinit" ];
                   image = "quay.io/nix-csi/scratch:1.0.0";
                   env = [
                     {

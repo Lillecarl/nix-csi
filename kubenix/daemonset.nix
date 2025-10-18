@@ -51,7 +51,7 @@ in
                   name = "nix-csi-node";
                   image = "quay.io/nix-csi/scratch:1.0.0";
                   securityContext.privileged = true;
-                  command = [ "dinixLauncher" ];
+                  command = [ "dinit" ];
                   env = [
                     {
                       name = "CSI_ENDPOINT";

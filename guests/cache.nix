@@ -133,7 +133,6 @@ pkgs.buildEnv {
     ncdu
     openssh
     curl
-    dinixEval.config.package
-    dinixEval.config.containerLauncher
+    dinixEval.config.containerWrapper
   ];
 }

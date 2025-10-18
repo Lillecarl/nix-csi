@@ -57,7 +57,6 @@ pkgs.buildEnv {
     lix
     gitMinimal
     ncdu
-    dinixEval.config.package
-    dinixEval.config.containerLauncher
+    dinixEval.config.containerWrapper
   ];
 }

@@ -48,6 +48,16 @@ import dinix {
                 #! ${pkgs.runtimeShell}
                 set -euo pipefail
                 set -x
+                export PATH=${
+                  lib.makeBinPath (
+                    with pkgs;
+                    [
+                      rsync
+                      uutils-coreutils-noprefix
+                      lix
+                    ]
+                  )
+                }
                 mkdir --parents /usr/bin
                 ln --symbolic --force ${lib.getExe' pkgs.uutils-coreutils-noprefix "env"} /usr/bin/env
                 mkdir --parents /tmp
