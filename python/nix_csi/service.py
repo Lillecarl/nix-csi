@@ -141,39 +141,22 @@ def log_request(method_name: str, request: Any):
     logger.info("Received %s:\n%s", method_name, request)
 
 
-class IdentityServicer(csi_grpc.IdentityBase):
-    async def GetPluginInfo(self, stream):
-        request: csi_pb2.GetPluginInfoRequest | None = await stream.recv_message()
-        if request is None:
-            raise ValueError("GetPluginInfoRequest is None")
-        reply = csi_pb2.GetPluginInfoResponse(
-            name=CSI_PLUGIN_NAME, vendor_version=CSI_VENDOR_VERSION
+async def set_nix_path():
+    NIX_PATH_PATH = CSI_ROOT / "NIX_PATH"
+    build = await run_captured(
+        "nix",
+        "build",
+        "--file",
+        "/etc/nix/nix-path.nix",
+        "--out-link",
+        NIX_PATH_PATH,
+    )
+    if build.returncode != 0:
+        raise NixCsiError(
+            Status.INVALID_ARGUMENT,
+            f"nix build (NIX_PATH) failed: {build.returncode=} {build.combined=}",
         )
-        await stream.send_message(reply)
-
-    async def GetPluginCapabilities(self, stream):
-        request: (
-            csi_pb2.GetPluginCapabilitiesRequest | None
-        ) = await stream.recv_message()
-        if request is None:
-            raise ValueError("GetPluginCapabilitiesRequest is None")
-        reply = csi_pb2.GetPluginCapabilitiesResponse(
-            capabilities=[
-                csi_pb2.PluginCapability(
-                    service=csi_pb2.PluginCapability.Service(
-                        type=csi_pb2.PluginCapability.Service.CONTROLLER_SERVICE
-                    )
-                ),
-            ]
-        )
-        await stream.send_message(reply)
-
-    async def Probe(self, stream):
-        request: csi_pb2.ProbeRequest | None = await stream.recv_message()
-        if request is None:
-            raise ValueError("ProbeRequest is None")
-        reply = csi_pb2.ProbeResponse(ready=BoolValue(value=True))
-        await stream.send_message(reply)
+    os.environ["NIX_PATH"] = NIX_PATH_PATH.read_text().strip()
 
 
 class NodeServicer(csi_grpc.NodeBase):
@@ -195,6 +178,8 @@ class NodeServicer(csi_grpc.NodeBase):
             reply = csi_pb2.NodePublishVolumeResponse()
             await stream.send_message(reply)
             return
+
+        await set_nix_path()
 
         expression = request.volume_context.get("expression")
         storePath = request.volume_context.get("storePath")
@@ -358,9 +343,7 @@ class NodeServicer(csi_grpc.NodeBase):
 
             # Create Nix database
             # This is an execline script that runs nix-store --dump-db | NIX_STATE_DIR=something nix-store --load-db
-            nix_init_db = await run_captured(
-                "nix_init_db", NIX_STATE_DIR, *paths
-            )
+            nix_init_db = await run_captured("nix_init_db", NIX_STATE_DIR, *paths)
             if nix_init_db.returncode != 0:
                 raise NixCsiError(
                     Status.INTERNAL,
@@ -489,8 +472,8 @@ class NodeServicer(csi_grpc.NodeBase):
             except Exception as ex:
                 errors.append(f"volume cleanup failed: {ex}")
 
-        if errors:
-            raise NixCsiError(Status.INTERNAL, "; ".join(errors))
+            if errors:
+                raise NixCsiError(Status.INTERNAL, "; ".join(errors))
 
         reply = csi_pb2.NodeUnpublishVolumeResponse()
         await stream.send_message(reply)
@@ -528,6 +511,41 @@ class NodeServicer(csi_grpc.NodeBase):
     async def NodeUnstageVolume(self, stream):
         del stream  # typechecker
         raise NixCsiError(Status.UNIMPLEMENTED, "NodeUnstageVolume not implemented")
+
+
+class IdentityServicer(csi_grpc.IdentityBase):
+    async def GetPluginInfo(self, stream):
+        request: csi_pb2.GetPluginInfoRequest | None = await stream.recv_message()
+        if request is None:
+            raise ValueError("GetPluginInfoRequest is None")
+        reply = csi_pb2.GetPluginInfoResponse(
+            name=CSI_PLUGIN_NAME, vendor_version=CSI_VENDOR_VERSION
+        )
+        await stream.send_message(reply)
+
+    async def GetPluginCapabilities(self, stream):
+        request: (
+            csi_pb2.GetPluginCapabilitiesRequest | None
+        ) = await stream.recv_message()
+        if request is None:
+            raise ValueError("GetPluginCapabilitiesRequest is None")
+        reply = csi_pb2.GetPluginCapabilitiesResponse(
+            capabilities=[
+                csi_pb2.PluginCapability(
+                    service=csi_pb2.PluginCapability.Service(
+                        type=csi_pb2.PluginCapability.Service.CONTROLLER_SERVICE
+                    )
+                ),
+            ]
+        )
+        await stream.send_message(reply)
+
+    async def Probe(self, stream):
+        request: csi_pb2.ProbeRequest | None = await stream.recv_message()
+        if request is None:
+            raise ValueError("ProbeRequest is None")
+        reply = csi_pb2.ProbeResponse(ready=BoolValue(value=True))
+        await stream.send_message(reply)
 
 
 async def serve():
