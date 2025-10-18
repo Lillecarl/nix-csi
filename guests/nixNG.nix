@@ -17,7 +17,7 @@ let
     repo = "nixNG";
     ref = "master";
   };
-  pkgs = import nixpkgs {};
+  pkgs = import nixpkgs { };
   flake = (import flake-compatish) nixpkgs;
   nglib = import "${nixng}/lib" flake.outputs.lib;
 in
@@ -49,4 +49,5 @@ in
       }
     );
   };
-}.nixNG.config.system.build.toplevel
+}
+.nixNG.config.system.build.toplevel
