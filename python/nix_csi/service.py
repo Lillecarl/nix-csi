@@ -273,12 +273,16 @@ class NodeServicer(csi_grpc.NodeBase):
                 "Set either `expression` or `storePath` in volume attributes",
             )
 
-        fakeRoot = CSI_VOLUMES / request.volume_id
-        nixCsiPrefix = fakeRoot / "nix"
-        packageResultPath = nixCsiPrefix / "var/result"
+        # Root directory for volume. Contains /nix, also contains "workdir" and
+        # "upperdir" if we're doing overlayfs mounting
+        volumeRoot = CSI_VOLUMES / request.volume_id
+        # Where the root derivation will be linked, so users have a known path
+        # to execute programs from.
+        packageResultPath = volumeRoot / "nix/var/result"
         # Capitalized to emphasise they're Nix environment variables
-        NIX_STATE_DIR = nixCsiPrefix / "var/nix"
-        NIX_STORE_DIR = nixCsiPrefix / "store"
+        NIX_STATE_DIR = volumeRoot / "nix/var/nix"
+        # Create NIX_STATE_DIR where database will be initialized
+        NIX_STATE_DIR.mkdir(parents=True, exist_ok=True)
 
         # Get dependency paths
         pathInfo = await run_captured(
@@ -294,10 +298,6 @@ class NodeServicer(csi_grpc.NodeBase):
             )
         paths = pathInfo.stdout.splitlines()
 
-        # Create container store structure
-        NIX_STATE_DIR.mkdir(parents=True, exist_ok=True)
-        NIX_STORE_DIR.mkdir(parents=True, exist_ok=True)
-
         try:
             # Copy dependencies to substore, rsync saves a lot of implementation headache
             # here. --archive keeps all attributes, --hard-links hardlinks everything
@@ -307,8 +307,9 @@ class NodeServicer(csi_grpc.NodeBase):
                 "--one-file-system",
                 "--archive",
                 "--hard-links",
+                "--mkpath",
                 *paths,
-                NIX_STORE_DIR,
+                volumeRoot / "nix/store",
             )
             if rsync.returncode != 0:
                 raise NixCsiError(
@@ -317,28 +318,28 @@ class NodeServicer(csi_grpc.NodeBase):
                 )
 
             # Link root derivation to /nix/var/result in the container. This is a "well-know" path
-            ln1 = await run_captured(
+            lnResult = await run_captured(
                 "ln", "--force", "--symbolic", packagePath, packageResultPath
             )
-            if ln1.returncode != 0:
+            if lnResult.returncode != 0:
                 raise NixCsiError(
                     Status.INTERNAL,
-                    f"ln1 failed {ln1.returncode=} {ln1.stdout=} {ln1.stderr=}",
+                    f"ln1 failed {lnResult.returncode=} {lnResult.stdout=} {lnResult.stderr=}",
                 )
 
             # gcroots
             (NIX_STATE_DIR / "gcroots").mkdir(parents=True, exist_ok=True)
-            ln2 = await run_captured(
+            lnRoots = await run_captured(
                 "ln",
                 "--force",
                 "--symbolic",
                 "/nix/var/result",
                 NIX_STATE_DIR / "gcroots" / "result",
             )
-            if ln2.returncode != 0:
+            if lnRoots.returncode != 0:
                 raise NixCsiError(
                     Status.INTERNAL,
-                    f"ln2 failed {ln2.returncode=} {ln2.stdout=} {ln2.stderr=}",
+                    f"ln2 failed {lnRoots.returncode=} {lnRoots.stdout=} {lnRoots.stderr=}",
                 )
 
             # Create Nix database
@@ -353,10 +354,11 @@ class NodeServicer(csi_grpc.NodeBase):
             # Remove gcroots if we failed something else
             gcPath.unlink(missing_ok=True)
             # Remove what we were working on
-            shutil.rmtree(fakeRoot, True)
+            shutil.rmtree(volumeRoot, True)
             raise ex
 
-        sourcePath = fakeRoot / "nix"
+        # The directory we're mounting from
+        sourcePath = volumeRoot / "nix"
 
         targetPath.mkdir(parents=True, exist_ok=True)
         if request.readonly:
@@ -383,8 +385,8 @@ class NodeServicer(csi_grpc.NodeBase):
             # For readwrite we use an overlayfs mount, the benefit here is that
             # it works as CoW even if the underlying filesystem doesn't support
             # it, reducing host storage usage.
-            workdir = fakeRoot / "workdir"
-            upperdir = fakeRoot / "upperdir"
+            workdir = volumeRoot / "workdir"
+            upperdir = volumeRoot / "upperdir"
             workdir.mkdir(parents=True, exist_ok=True)
             upperdir.mkdir(parents=True, exist_ok=True)
             mount = await run_console(
