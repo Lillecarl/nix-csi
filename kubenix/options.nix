@@ -17,7 +17,13 @@
     };
     image = lib.mkOption {
       type = lib.types.str;
-      default = "nix-csi-ds:latest";
+      default =
+        let
+          pyproject = builtins.fromTOML (builtins.readFile ../python/pyproject.toml);
+          version = pyproject.project.version;
+          image = "quay.io/nix-csi/nix-csi:${version}";
+        in
+        image;
     };
     hostMountPath = lib.mkOption {
       description = "Where on the host to put cknix store";
