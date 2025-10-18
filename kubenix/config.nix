@@ -44,6 +44,12 @@ in
                 repo = "dinix";
                 ref = "main";
               };
+              flake-compatish = builtins.fetchTree {
+                type = "github";
+                owner = "lillecarl";
+                repo = "flake-compatish";
+                ref = "main";
+              };
             };
 
             pkgs = import paths.nixpkgs { };
