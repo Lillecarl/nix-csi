@@ -6,6 +6,7 @@ import tempfile
 import asyncio
 import shlex
 import time
+from importlib import metadata
 
 from typing import Any, NamedTuple, Optional
 from google.protobuf.wrappers_pb2 import BoolValue
@@ -18,7 +19,7 @@ from pathlib import Path
 logger = logging.getLogger("nix-csi")
 
 CSI_PLUGIN_NAME = "nix.csi.store"
-CSI_VENDOR_VERSION = "0.1.0"
+CSI_VENDOR_VERSION = metadata.version("nix-csi")
 
 MOUNT_ALREADY_MOUNTED = 32
 

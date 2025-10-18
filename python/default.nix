@@ -9,17 +9,14 @@
   nix_init_db, # Import from one nix DB to another
 }:
 let
-  pname = "nix-csi";
-  version = "0.1.0";
-
+  pyproject = builtins.fromTOML (builtins.readFile ./pyproject.toml);
 in
 buildPythonApplication {
-  inherit pname version;
+  pname = pyproject.project.name;
+  version = pyproject.project.version;
   src = ./.;
   pyproject = true;
-  build-system = [
-    hatchling
-  ];
+  build-system = [ hatchling ];
   dependencies = [
     openssh
     rsync
