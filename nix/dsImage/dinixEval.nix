@@ -56,6 +56,10 @@ import dinix {
                 rsync --verbose --archive ${pkgs.dockerTools.caCertificates}/ /
                 # Tricking OpenSSH's security policies
                 rsync --archive --copy-links --chmod=600 /etc/sshc/ ''${HOME}/.ssh/
+                # Remove nix2container gcroots (they might be old, /nix/var/result is a valid gcroot)
+                rm --recursive --force /nix/var/nix/gcroots/docker
+                # Collect garbage on startup
+                nix-store --gc
               ''
           );
         };
