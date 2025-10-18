@@ -13,7 +13,7 @@
     enableBinaryCache = lib.mkOption {
       description = "Enable deployment of a cluster-internal nix binary cache";
       type = lib.types.bool;
-      default = true;
+      default = false;
     };
     image = lib.mkOption {
       type = lib.types.str;

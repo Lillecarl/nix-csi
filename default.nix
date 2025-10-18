@@ -80,6 +80,7 @@ let
         {
           config = {
             nix-csi.image = imageRef;
+            nix-csi.enableBinaryCache = true;
             kluctl.discriminator = "nix-csi";
           };
         }
