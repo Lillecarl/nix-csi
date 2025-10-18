@@ -198,9 +198,8 @@ class NodeServicer(csi_grpc.NodeBase):
 
         expression = request.volume_context.get("expression")
         storePath = request.volume_context.get("storePath")
-        root_name = request.volume_id
         packagePath: Path | None = None
-        gcPath = NIX_GCROOTS / root_name
+        gcPath = NIX_GCROOTS / request.volume_id
 
         if storePath is not None:
             logger.debug(f"{storePath=}")
@@ -289,7 +288,7 @@ class NodeServicer(csi_grpc.NodeBase):
                 "Set either `expression` or `storePath` in volume attributes",
             )
 
-        fakeRoot = CSI_VOLUMES / root_name
+        fakeRoot = CSI_VOLUMES / request.volume_id
         nixCsiPrefix = fakeRoot / "nix"
         packageResultPath = nixCsiPrefix / "var/result"
         # Capitalized to emphasise they're Nix environment variables
@@ -401,9 +400,8 @@ class NodeServicer(csi_grpc.NodeBase):
             # For readwrite we use an overlayfs mount, the benefit here is that
             # it works as CoW even if the underlying filesystem doesn't support
             # it, reducing host storage usage.
-            parent = targetPath.parent
-            workdir = parent / "workdir"
-            upperdir = parent / "upperdir"
+            workdir = fakeRoot / "workdir"
+            upperdir = fakeRoot / "upperdir"
             workdir.mkdir(parents=True, exist_ok=True)
             upperdir.mkdir(parents=True, exist_ok=True)
             mount = await run_console(
