@@ -143,7 +143,7 @@ def log_request(method_name: str, request: Any):
 
 async def set_nix_path():
     NIX_PATH_PATH = CSI_ROOT / "NIX_PATH"
-    build = await run_captured(
+    build = await run_console(
         "nix",
         "build",
         "--file",
@@ -152,9 +152,9 @@ async def set_nix_path():
         NIX_PATH_PATH,
     )
     if build.returncode != 0:
-        raise NixCsiError(
+        raise GRPCError(
             Status.INVALID_ARGUMENT,
-            f"nix build (NIX_PATH) failed: {build.returncode=} {build.combined=}",
+            f"nix build (NIX_PATH) failed: {build.returncode=}",
         )
     os.environ["NIX_PATH"] = NIX_PATH_PATH.read_text().strip()
 
