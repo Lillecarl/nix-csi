@@ -2,6 +2,7 @@
   buildPythonApplication,
   hatchling,
   csi-proto-python, # CSI GRPC bindings
+  cachetools,
   gitMinimal, # Lix requires Git CLI since it doesn't use libgit2
   lix, # We need a Nix implementation.... :)
   nix_init_db, # Import from one nix DB to another
@@ -21,6 +22,7 @@ buildPythonApplication {
   build-system = [ hatchling ];
   dependencies = [
     csi-proto-python
+    cachetools
     gitMinimal
     lix
     nix_init_db

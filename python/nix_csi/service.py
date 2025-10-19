@@ -15,6 +15,8 @@ from grpclib.exceptions import GRPCError
 from grpclib.const import Status
 from csi import csi_grpc, csi_pb2
 from pathlib import Path
+from cachetools import TTLCache
+from hashlib import sha256
 
 logger = logging.getLogger("nix-csi")
 
@@ -23,14 +25,13 @@ CSI_VENDOR_VERSION = metadata.version("nix-csi")
 
 MOUNT_ALREADY_MOUNTED = 32
 
-KUBE_NODE_NAME = os.environ.get("KUBE_NODE_NAME")
-if KUBE_NODE_NAME is None:
-    raise Exception("Please make sure KUBE_NODE_NAME is set")
-
 # Paths we base everything on. Remember that these are CSI pod paths not node paths.
 CSI_ROOT = Path("/nix/var/nix-csi")
 CSI_VOLUMES = CSI_ROOT / "volumes"
 NIX_GCROOTS = Path("/nix/var/nix/gcroots/nix-csi")
+
+BUILD_SEMAPHORE = asyncio.Semaphore(5)
+RSYNC_SEMAPHORE = asyncio.Semaphore(1)
 
 
 class NixCsiError(GRPCError):
@@ -96,45 +97,53 @@ class SubprocessResult(NamedTuple):
 
 
 # Run async subprocess, capture output and returncode
-async def run_captured(*args):
-    return await run_console(*args, log_level=logging.NOTSET)
+async def run_captured(*args, semaphore=asyncio.Semaphore()):
+    return await run_console(*args, log_level=logging.NOTSET, semaphore=semaphore)
 
 
 # Run async subprocess, forward output to console and return returncode
-async def run_console(*args, log_level: int = logging.DEBUG):
-    log_command(*args, log_level=log_level)
-    start_time = time.perf_counter()
-    proc = await asyncio.create_subprocess_exec(
-        *[str(arg) for arg in args],
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
+async def run_console(
+    *args, log_level: int = logging.DEBUG, semaphore=asyncio.Semaphore()
+):
+    async with semaphore:
+        start_time = time.perf_counter()
+        log_command(*args, log_level=log_level)
+        proc = await asyncio.create_subprocess_exec(
+            *[str(arg) for arg in args],
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
 
-    stdout_data = []
-    stderr_data = []
-    combined_data = []
+        stdout_data = []
+        stderr_data = []
+        combined_data = []
 
-    async def stream_output(stream, buffer):
-        async for line in stream:
-            decoded = line.decode().strip()
-            buffer.append(decoded)
-            combined_data.append(decoded)
-            logger.log(log_level, decoded)
+        async def stream_output(stream, buffer):
+            async for line in stream:
+                decoded = line.decode().strip()
+                buffer.append(decoded)
+                combined_data.append(decoded)
+                logger.log(log_level, decoded)
 
-    await asyncio.gather(
-        stream_output(proc.stdout, stdout_data),
-        stream_output(proc.stderr, stderr_data),
-        proc.wait(),
-    )
+        await asyncio.gather(
+            stream_output(proc.stdout, stdout_data),
+            stream_output(proc.stderr, stderr_data),
+            proc.wait(),
+        )
+        elapsed_time = time.perf_counter() - start_time
+        if elapsed_time > 5:
+            logger.info(
+                f"Comamnd executed in {elapsed_time} seconds: {shlex.join([str(arg) for arg in args[:5]])}"
+            )
 
-    assert proc.returncode is not None
-    return SubprocessResult(
-        proc.returncode,
-        "\n".join(stdout_data).strip(),
-        "\n".join(stderr_data).strip(),
-        "\n".join(combined_data).strip(),
-        time.perf_counter() - start_time,
-    )
+        assert proc.returncode is not None
+        return SubprocessResult(
+            proc.returncode,
+            "\n".join(stdout_data).strip(),
+            "\n".join(stderr_data).strip(),
+            "\n".join(combined_data).strip(),
+            elapsed_time,
+        )
 
 
 def log_request(method_name: str, request: Any):
@@ -160,6 +169,9 @@ async def set_nix_path():
 
 
 class NodeServicer(csi_grpc.NodeBase):
+    expressionCache = TTLCache(maxsize=float("inf"), ttl=60)
+    pathInfoCache = TTLCache(maxsize=float("inf"), ttl=60)
+
     async def NodePublishVolume(self, stream):
         request: csi_pb2.NodePublishVolumeRequest | None = await stream.recv_message()
         if request is None:
@@ -179,8 +191,6 @@ class NodeServicer(csi_grpc.NodeBase):
             await stream.send_message(reply)
             return
 
-        await set_nix_path()
-
         expression = request.volume_context.get("expression")
         storePath = request.volume_context.get("storePath")
         packagePath: Path | None = None
@@ -188,17 +198,6 @@ class NodeServicer(csi_grpc.NodeBase):
 
         if storePath is not None:
             logger.debug(f"{storePath=}")
-            # TODO: Support multiarch
-            system = (
-                await run_console(
-                    "nix",
-                    "eval",
-                    "--impure",
-                    "--raw",
-                    "--expr",
-                    "builtins.currentSystem",
-                )
-            ).stdout
             buildCommand = [
                 "nix",
                 "build",
@@ -211,14 +210,20 @@ class NodeServicer(csi_grpc.NodeBase):
             ]
 
             # Fetch storePath from caches
-            build = await run_console(*buildCommand)
+            build = await run_console(
+                *buildCommand,
+                semaphore=BUILD_SEMAPHORE,
+            )
             if build.returncode != 0:
                 buildCommand += [
                     "--substituters",
                     "https://cache.nixos.org",
                 ]
                 if os.getenv("BUILD_CACHE") == "true":
-                    build = await run_console(*buildCommand)
+                    build = await run_console(
+                        *buildCommand,
+                        semaphore=BUILD_SEMAPHORE,
+                    )
                 if build.returncode != 0:
                     logger.error(f"nix build (expression) failed: {build.returncode=}")
                     # Use GRPCError here, we don't need to log output again
@@ -230,43 +235,54 @@ class NodeServicer(csi_grpc.NodeBase):
             packagePath = Path(build.stdout.splitlines()[0])
         elif expression is not None:
             logger.debug(f"{expression=}")
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".nix") as f:
-                expressionFile = Path(f.name)
-                f.write(expression)
-                f.flush()
+            expressionHash = sha256(expression.encode("utf-8")).hexdigest()
+            if expressionHash in self.expressionCache:
+                packagePath = self.expressionCache[expressionHash]
+            else:
+                with tempfile.NamedTemporaryFile(mode="w", suffix=".nix") as f:
+                    expressionFile = Path(f.name)
+                    f.write(expression)
+                    f.flush()
 
-                buildCommand = [
-                    "nix",
-                    "build",
-                    "--impure",
-                    "--print-out-paths",
-                    "--out-link",
-                    gcPath,
-                    # "installable"
-                    "--file",
-                    expressionFile,
-                ]
-
-                # Build expression
-                build = await run_console(*buildCommand)
-                if build.returncode != 0:
-                    buildCommand += [
-                        "--substituters",
-                        "https://cache.nixos.org",
+                    buildCommand = [
+                        "nix",
+                        "build",
+                        "--impure",
+                        "--print-out-paths",
+                        "--out-link",
+                        gcPath,
+                        # "installable"
+                        "--file",
+                        expressionFile,
                     ]
-                    if os.getenv("BUILD_CACHE") == "true":
-                        build = await run_console(*buildCommand)
-                    if build.returncode != 0:
-                        logger.error(
-                            f"nix build (expression) failed: {build.returncode=}"
-                        )
-                        # Use GRPCError here, we don't need to log output again
-                        raise GRPCError(
-                            Status.INVALID_ARGUMENT,
-                            f"nix build (expression) failed: {build.returncode=} {build.stderr=}",
-                        )
 
-                packagePath = Path(build.stdout.splitlines()[0])
+                    # Build expression
+                    build = await run_console(
+                        *buildCommand,
+                        semaphore=BUILD_SEMAPHORE,
+                    )
+                    if build.returncode != 0:
+                        buildCommand += [
+                            "--substituters",
+                            "https://cache.nixos.org",
+                        ]
+                        if os.getenv("BUILD_CACHE") == "true":
+                            build = await run_console(
+                                *buildCommand,
+                                semaphore=BUILD_SEMAPHORE,
+                            )
+                        if build.returncode != 0:
+                            logger.error(
+                                f"nix build (expression) failed: {build.returncode=}"
+                            )
+                            # Use GRPCError here, we don't need to log output again
+                            raise GRPCError(
+                                Status.INVALID_ARGUMENT,
+                                f"nix build (expression) failed: {build.returncode=} {build.stderr=}",
+                            )
+
+                    packagePath = Path(build.stdout.splitlines()[0])
+                    self.expressionCache[expressionHash] = packagePath
         else:
             raise GRPCError(
                 Status.INVALID_ARGUMENT,
@@ -284,19 +300,24 @@ class NodeServicer(csi_grpc.NodeBase):
         # Create NIX_STATE_DIR where database will be initialized
         NIX_STATE_DIR.mkdir(parents=True, exist_ok=True)
 
-        # Get dependency paths
-        pathInfo = await run_captured(
-            "nix",
-            "path-info",
-            "--recursive",
-            packagePath,
-        )
-        if pathInfo.returncode != 0:
-            raise NixCsiError(
-                Status.INTERNAL,
-                f"nix path-info failed: {pathInfo.returncode=} {pathInfo.stderr=}",
+        paths = []
+        if packagePath in self.pathInfoCache:
+            paths = self.pathInfoCache[packagePath]
+        else:
+            # Get dependency paths
+            pathInfo = await run_captured(
+                "nix",
+                "path-info",
+                "--recursive",
+                packagePath,
             )
-        paths = pathInfo.stdout.splitlines()
+            if pathInfo.returncode != 0:
+                raise NixCsiError(
+                    Status.INTERNAL,
+                    f"nix path-info failed: {pathInfo.returncode=} {pathInfo.stderr=}",
+                )
+            paths = pathInfo.stdout.splitlines()
+            self.pathInfoCache[packagePath] = paths
 
         try:
             # Copy dependencies to substore, rsync saves a lot of implementation headache
@@ -310,6 +331,7 @@ class NodeServicer(csi_grpc.NodeBase):
                 "--mkpath",
                 *paths,
                 volumeRoot / "nix/store",
+                semaphore=RSYNC_SEMAPHORE,
             )
             if rsync.returncode != 0:
                 raise NixCsiError(
@@ -344,7 +366,11 @@ class NodeServicer(csi_grpc.NodeBase):
 
             # Create Nix database
             # This is an execline script that runs nix-store --dump-db | NIX_STATE_DIR=something nix-store --load-db
-            nix_init_db = await run_captured("nix_init_db", NIX_STATE_DIR, *paths)
+            nix_init_db = await run_captured(
+                "nix_init_db",
+                NIX_STATE_DIR,
+                *paths,
+            )
             if nix_init_db.returncode != 0:
                 raise NixCsiError(
                     Status.INTERNAL,
@@ -494,7 +520,7 @@ class NodeServicer(csi_grpc.NodeBase):
             raise ValueError("NodeGetInfoRequest is None")
         # log_request("NodeGetInfo", request)
         reply = csi_pb2.NodeGetInfoResponse(
-            node_id=str(KUBE_NODE_NAME),
+            node_id=str(os.environ.get("KUBE_NODE_NAME")),
         )
         await stream.send_message(reply)
 
@@ -557,6 +583,7 @@ async def serve():
     CSI_ROOT.mkdir(parents=True, exist_ok=True)
     CSI_VOLUMES.mkdir(parents=True, exist_ok=True)
     NIX_GCROOTS.mkdir(parents=True, exist_ok=True)
+    await set_nix_path()
 
     sock_path = "/csi/csi.sock"
     Path(sock_path).unlink(missing_ok=True)

@@ -152,6 +152,7 @@ let
         nix-csi
         csi-proto-python
         grpclib
+        cachetools
       ]
     );
     # env to add to PATH with direnv
