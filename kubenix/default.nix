@@ -8,5 +8,6 @@
     ./storageclass.nix
     ./config.nix
     ./cache.nix
+    ./undeploy.nix
   ];
 }
