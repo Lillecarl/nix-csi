@@ -1,2 +1,2 @@
-_: lib: {
+self: lib: {
 }

@@ -1,8 +1,4 @@
-_: pkgs:
-let
-  inherit (pkgs) lib;
-in
-{
+self: pkgs: {
   # Overlay lib
   lib = pkgs.lib.extend (import ../lib);
 
@@ -12,11 +8,15 @@ in
   nix_init_db =
     pkgs.writeScriptBin "nix_init_db" # execline
       ''
-        #! ${lib.getExe' pkgs.execline "execlineb"} -s1
+        #! ${self.lib.getExe' pkgs.execline "execlineb"} -s1
         emptyenv -p
         pipeline { nix-store --dump-db $@ }
         export USER nobody
         export NIX_STATE_DIR $1
         exec nix-store --load-db
       '';
+
+  asyncache = pkgs.python3Packages.callPackage ./asyncache.nix { };
+  python-jsonpath = pkgs.python3Packages.callPackage ./python-jsonpath.nix { };
+  kr8s = pkgs.python3Packages.callPackage ./kr8s.nix { inherit (self) asyncache python-jsonpath; };
 }
