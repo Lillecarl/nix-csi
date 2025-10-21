@@ -38,6 +38,18 @@ in
                 repo = "nixpkgs";
                 ref = "nixos-unstable";
               };
+              home-manager = builtins.fetchTree {
+                type = "github";
+                owner = "nix-community";
+                repo = "home-manager";
+                ref = "release-25.05";
+              };
+              home-manager-unstable = builtins.fetchTree {
+                type = "github";
+                owner = "nix-community";
+                repo = "home-manager";
+                ref = "master";
+              };
               dinix = builtins.fetchTree {
                 type = "github";
                 owner = "lillecarl";
