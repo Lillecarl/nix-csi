@@ -1,7 +1,6 @@
 {
   pkgs,
   dinix,
-  nix-csi,
 }:
 let
   lib = pkgs.lib;
@@ -34,7 +33,7 @@ import dinix {
       config = {
         services.boot.depends-on = [ "nix-csi" ];
         services.nix-csi = {
-          command = "${lib.getExe nix-csi} --loglevel DEBUG";
+          command = "${lib.getExe pkgs.python3Packages.nix-csi} --loglevel DEBUG";
           options = [ "shares-console" ];
           depends-on = [ "setup" ];
         };

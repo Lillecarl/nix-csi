@@ -54,10 +54,6 @@ let
       inherit pkgs;
       system = pkgs.system;
     };
-    csi-proto-python = pkgs.python3Packages.callPackage ./nix/csi-proto-python { };
-    nix-csi = pkgs.python3Packages.callPackage ./python {
-      inherit csi-proto-python;
-    };
     easykubenix =
       let
         try = builtins.tryEval (import /home/lillecarl/Code/easykubenix);
@@ -88,10 +84,12 @@ let
     };
 
     # dinix evaluation for daemonset
-    dinixEval = import ./nix/dsImage/dinixEval.nix { inherit pkgs dinix nix-csi; };
+    dinixEval = import ./nix/dsImage/dinixEval.nix {
+      inherit pkgs dinix;
+    };
     # script to build daemonset image
     image = import ./nix/dsImage {
-      inherit pkgs dinix nix-csi;
+      inherit pkgs dinix;
       inherit (n2c) nix2container;
     };
     imageToContainerd = copyToContainerd image;
@@ -153,6 +151,7 @@ let
         csi-proto-python
         grpclib
         cachetools
+        kr8s
       ]
     );
     # env to add to PATH with direnv
@@ -174,10 +173,11 @@ in
 on
 // {
   inherit off;
+
   uploadCsi =
     let
-      csiUrl = system: "quay.io/nix-csi/nix-csi:${on.nix-csi.version}-${system}";
-      csiManifest = "quay.io/nix-csi/nix-csi:${on.nix-csi.version}";
+      csiUrl = system: "quay.io/nix-csi/nix-csi:${on.pkgs.python3Packages.nix-csi.version}-${system}";
+      csiManifest = "quay.io/nix-csi/nix-csi:${on.pkgs.python3Packages.nix-csi.version}";
     in
     pkgs.writeScriptBin "merge" # bash
       ''
