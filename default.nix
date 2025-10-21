@@ -147,11 +147,9 @@ let
     # simpler than devshell
     python = pkgs.python3.withPackages (
       pypkgs: with pypkgs; [
-        nix-csi
-        csi-proto-python
-        grpclib
-        cachetools
-        kr8s
+        pkgs.nix-csi
+        pkgs.csi-proto-python
+        pkgs.kr8s
       ]
     );
     # env to add to PATH with direnv
@@ -176,8 +174,8 @@ on
 
   uploadCsi =
     let
-      csiUrl = system: "quay.io/nix-csi/nix-csi:${on.pkgs.python3Packages.nix-csi.version}-${system}";
-      csiManifest = "quay.io/nix-csi/nix-csi:${on.pkgs.python3Packages.nix-csi.version}";
+      csiUrl = system: "quay.io/nix-csi/nix-csi:${on.pkgs.nix-csi.version}-${system}";
+      csiManifest = "quay.io/nix-csi/nix-csi:${on.pkgs.nix-csi.version}";
     in
     pkgs.writeScriptBin "merge" # bash
       ''

@@ -16,13 +16,12 @@ self: pkgs: {
         exec nix-store --load-db
       '';
 
-  python3Packages = pkgs.python3Packages // {
-    csi-proto-python = pkgs.python3Packages.callPackage ./csi-proto-python { };
-    nix-csi = pkgs.python3Packages.callPackage ../python {
-      inherit (self.python3Packages) csi-proto-python;
-    };
-    asyncache = pkgs.python3Packages.callPackage ./asyncache.nix { };
-    python-jsonpath = pkgs.python3Packages.callPackage ./python-jsonpath.nix { };
-    kr8s = pkgs.python3Packages.callPackage ./kr8s.nix { inherit (self) asyncache python-jsonpath; };
+  csi-proto-python = pkgs.python3Packages.callPackage ./csi-proto-python { };
+  nix-csi = pkgs.python3Packages.callPackage ../python {
+    inherit (self) csi-proto-python;
   };
+  asyncache = pkgs.python3Packages.callPackage ./asyncache.nix { };
+  python-jsonpath = pkgs.python3Packages.callPackage ./python-jsonpath.nix { };
+  kr8s = pkgs.python3Packages.callPackage ./kr8s.nix { inherit (self) asyncache python-jsonpath; };
+
 }
