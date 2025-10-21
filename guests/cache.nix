@@ -91,12 +91,13 @@ let
                   ''
                     #! ${pkgs.runtimeShell}
                     mkdir --parents /usr/bin
-                    ln --symbolic --force ${lib.getExe' pkgs.uutils-coreutils-noprefix "env"} /usr/bin/env
                     mkdir --parents /tmp
                     mkdir --parents /tmp/log
                     mkdir --parents ''${HOME}
-                    rsync --verbose --archive --copy-links ${fakeNss}/ /
+                    rsync --verbose --archive ${fakeNss}/ /
+                    rsync --verbose --archive ${pkgs.dockerTools.binSh}/ /
                     rsync --verbose --archive ${pkgs.dockerTools.caCertificates}/ /
+                    rsync --verbose --archive ${pkgs.dockerTools.usrBinEnv}/ /
                     # Tricking OpenSSH's security policies
                     rsync --archive --copy-links --chmod=600 /etc/ssh-mount/ /etc/ssh/
                   ''
@@ -114,7 +115,7 @@ pkgs.buildEnv {
     initCopy
     nix_init_db
     rsync
-    uutils-coreutils-noprefix
+    coreutils
     fishMinimal
     gitMinimal
     lix

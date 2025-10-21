@@ -51,7 +51,7 @@ pkgs.buildEnv {
   name = "containerEnv";
   paths = with pkgs; [
     curl
-    uutils-coreutils-noprefix
+    coreutils
     fishMinimal
     execline
     lix

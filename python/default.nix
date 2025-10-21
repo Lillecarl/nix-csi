@@ -9,7 +9,7 @@
   openssh, # Copying to cache
   rsync, # hardlinking
   util-linuxMinimal, # mount, umount
-  uutils-coreutils-noprefix, # ln
+  coreutils, # ln
 }:
 let
   pyproject = builtins.fromTOML (builtins.readFile ./pyproject.toml);
@@ -29,7 +29,7 @@ buildPythonApplication {
     openssh
     rsync
     util-linuxMinimal
-    uutils-coreutils-noprefix
+    coreutils
   ];
   meta.mainProgram = "nix-csi";
 }
