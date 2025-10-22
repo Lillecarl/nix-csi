@@ -31,8 +31,7 @@ CSI_VOLUMES = CSI_ROOT / "volumes"
 NIX_GCROOTS = Path("/nix/var/nix/gcroots/nix-csi")
 NAMESPACE = os.environ["KUBE_NAMESPACE"]
 
-BUILD_SEMAPHORE = asyncio.Semaphore(5)
-RSYNC_SEMAPHORE = asyncio.Semaphore(1)
+VOLUME_SEMAPHORE = asyncio.Semaphore(2)
 
 
 class NixCsiError(GRPCError):
@@ -98,53 +97,50 @@ class SubprocessResult(NamedTuple):
 
 
 # Run async subprocess, capture output and returncode
-async def run_captured(*args, semaphore=asyncio.Semaphore()):
-    return await run_console(*args, log_level=logging.NOTSET, semaphore=semaphore)
+async def run_captured(*args):
+    return await run_console(*args, log_level=logging.NOTSET)
 
 
 # Run async subprocess, forward output to console and return returncode
-async def run_console(
-    *args, log_level: int = logging.DEBUG, semaphore=asyncio.Semaphore()
-):
-    async with semaphore:
-        start_time = time.perf_counter()
-        log_command(*args, log_level=log_level)
-        proc = await asyncio.create_subprocess_exec(
-            *[str(arg) for arg in args],
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+async def run_console(*args, log_level: int = logging.DEBUG):
+    start_time = time.perf_counter()
+    log_command(*args, log_level=log_level)
+    proc = await asyncio.create_subprocess_exec(
+        *[str(arg) for arg in args],
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+
+    stdout_data = []
+    stderr_data = []
+    combined_data = []
+
+    async def stream_output(stream, buffer):
+        async for line in stream:
+            decoded = line.decode().strip()
+            buffer.append(decoded)
+            combined_data.append(decoded)
+            logger.log(log_level, decoded)
+
+    await asyncio.gather(
+        stream_output(proc.stdout, stdout_data),
+        stream_output(proc.stderr, stderr_data),
+        proc.wait(),
+    )
+    elapsed_time = time.perf_counter() - start_time
+    if elapsed_time > 5:
+        logger.info(
+            f"Comamnd executed in {elapsed_time} seconds: {shlex.join([str(arg) for arg in args[:5]])}"
         )
 
-        stdout_data = []
-        stderr_data = []
-        combined_data = []
-
-        async def stream_output(stream, buffer):
-            async for line in stream:
-                decoded = line.decode().strip()
-                buffer.append(decoded)
-                combined_data.append(decoded)
-                logger.log(log_level, decoded)
-
-        await asyncio.gather(
-            stream_output(proc.stdout, stdout_data),
-            stream_output(proc.stderr, stderr_data),
-            proc.wait(),
-        )
-        elapsed_time = time.perf_counter() - start_time
-        if elapsed_time > 5:
-            logger.info(
-                f"Comamnd executed in {elapsed_time} seconds: {shlex.join([str(arg) for arg in args[:5]])}"
-            )
-
-        assert proc.returncode is not None
-        return SubprocessResult(
-            proc.returncode,
-            "\n".join(stdout_data).strip(),
-            "\n".join(stderr_data).strip(),
-            "\n".join(combined_data).strip(),
-            elapsed_time,
-        )
+    assert proc.returncode is not None
+    return SubprocessResult(
+        proc.returncode,
+        "\n".join(stdout_data).strip(),
+        "\n".join(stderr_data).strip(),
+        "\n".join(combined_data).strip(),
+        elapsed_time,
+    )
 
 
 def log_request(method_name: str, request: Any):
@@ -176,260 +172,249 @@ class NodeServicer(csi_grpc.NodeBase):
             raise ValueError("NodePublishVolumeRequest is None")
 
         logger.info("Received NodePublishVolume")
-        logger.info(f"{request.target_path=}")
-        logger.info(f"{request.volume_id=}")
 
-        targetPath = Path(request.target_path)
-        expression = request.volume_context.get("expression")
-        storePath = request.volume_context.get("storePath")
-        packagePath: Path | None = None
-        gcPath = NIX_GCROOTS / request.volume_id
+        async with VOLUME_SEMAPHORE:
+            logger.info(f"{request.target_path=}")
+            logger.info(f"{request.volume_id=}")
 
-        if storePath is not None:
-            logger.debug(f"{storePath=}")
-            buildCommand = [
-                "nix",
-                "build",
-                "--out-link",
-                gcPath,
-                storePath,
-            ]
+            targetPath = Path(request.target_path)
+            expression = request.volume_context.get("expression")
+            storePath = request.volume_context.get("storePath")
+            packagePath: Path | None = None
+            gcPath = NIX_GCROOTS / request.volume_id
 
-            # Fetch storePath from caches
-            build = await run_console(
-                *buildCommand,
-                semaphore=BUILD_SEMAPHORE,
-            )
-            if build.returncode != 0:
-                buildCommand += [
-                    "--substituters",
-                    "https://cache.nixos.org",
+            if storePath is not None:
+                logger.debug(f"{storePath=}")
+                buildCommand = [
+                    "nix",
+                    "build",
+                    "--out-link",
+                    gcPath,
+                    storePath,
                 ]
-                build = await run_console(
-                    *buildCommand,
-                    semaphore=BUILD_SEMAPHORE,
-                )
+
+                # Fetch storePath from caches
+                build = await run_console(*buildCommand)
                 if build.returncode != 0:
-                    logger.error(f"nix build (expression) failed: {build.returncode=}")
-                    # Use GRPCError here, we don't need to log output again
-                    raise GRPCError(
-                        Status.INVALID_ARGUMENT,
-                        f"nix build (expression) failed: {build.returncode=} {build.stderr=}",
-                    )
-            packagePath = Path(build.stdout.splitlines()[0])
-
-        elif expression is not None:
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".nix") as f:
-                expressionFile = Path(f.name)
-                f.write(expression)
-                f.flush()
-
-                expressionSuccess = False
-                # eval expression to get storePath
-                eval = await run_captured(
-                    "nix", "eval", "--impure", "--raw", "--file", expressionFile
-                )
-                if eval.returncode != 0:
-                    raise GRPCError(
-                        Status.INVALID_ARGUMENT,
-                        f"nix eval (expression) failed: {eval.returncode=} {eval.combined=}",
-                    )
-                storePath = eval.stdout
-
-                # Shortcut if we already have path
-                if Path(storePath).exists():
-                    expressionSuccess = True
-                    packagePath = Path(storePath)
-
-                # Spawn a Job to build the expression
-                if not expressionSuccess:
-                    jobResult = await runbuild.run(storePath, expression)
-                    if jobResult[0]:
-                        buildResult = await run_captured("nix", "build", storePath)
-                        if buildResult.returncode == 0:
-                            packagePath = Path(buildResult.stdout.splitlines()[0])
-                            expressionSuccess = True
-
-                # Build within CSI if Job build failed, this will be removed
-                if not expressionSuccess:
-                    buildCommand = [
-                        "nix",
-                        "build",
-                        "--impure",
-                        "--print-out-paths",
-                        "--out-link",
-                        gcPath,
-                        "--file",
-                        expressionFile,
+                    buildCommand += [
+                        "--substituters",
+                        "https://cache.nixos.org",
                     ]
-
-                    # Build expression
-                    build = await run_console(
-                        *buildCommand,
-                        semaphore=BUILD_SEMAPHORE,
-                    )
+                    build = await run_console(*buildCommand)
                     if build.returncode != 0:
-                        buildCommand += [
-                            "--substituters",
-                            "https://cache.nixos.org",
-                        ]
-                        # Retry build with only CNS if it fails
-                        build = await run_console(
-                            *buildCommand,
-                            semaphore=BUILD_SEMAPHORE,
+                        logger.error(f"nix build (expression) failed: {build.returncode=}")
+                        # Use GRPCError here, we don't need to log output again
+                        raise GRPCError(
+                            Status.INVALID_ARGUMENT,
+                            f"nix build (expression) failed: {build.returncode=} {build.stderr=}",
                         )
+                packagePath = Path(build.stdout.splitlines()[0])
+
+            elif expression is not None:
+                with tempfile.NamedTemporaryFile(mode="w", suffix=".nix") as f:
+                    expressionFile = Path(f.name)
+                    f.write(expression)
+                    f.flush()
+
+                    expressionSuccess = False
+                    # eval expression to get storePath
+                    eval = await run_captured(
+                        "nix", "eval", "--impure", "--raw", "--file", expressionFile
+                    )
+                    if eval.returncode != 0:
+                        raise GRPCError(
+                            Status.INVALID_ARGUMENT,
+                            f"nix eval (expression) failed: {eval.returncode=} {eval.combined=}",
+                        )
+                    storePath = eval.stdout
+
+                    # Shortcut if we already have path
+                    if Path(storePath).exists():
+                        expressionSuccess = True
+                        packagePath = Path(storePath)
+
+                    # Spawn a Job to build the expression
+                    if not expressionSuccess:
+                        jobResult = await runbuild.run(storePath, expression)
+                        if jobResult[0]:
+                            buildResult = await run_captured("nix", "build", storePath)
+                            if buildResult.returncode == 0:
+                                packagePath = Path(buildResult.stdout.splitlines()[0])
+                                expressionSuccess = True
+
+                    # Build within CSI if Job build failed, this will be removed
+                    if not expressionSuccess:
+                        buildCommand = [
+                            "nix",
+                            "build",
+                            "--impure",
+                            "--print-out-paths",
+                            "--out-link",
+                            gcPath,
+                            "--file",
+                            expressionFile,
+                        ]
+
+                        # Build expression
+                        build = await run_console(*buildCommand)
                         if build.returncode != 0:
-                            logger.error(
-                                f"nix build (expression) failed: {build.returncode=}"
-                            )
-                            # Use GRPCError here, we don't need to log output again
-                            raise GRPCError(
-                                Status.INVALID_ARGUMENT,
-                                f"nix build (expression) failed: {build.returncode=} {build.stderr=}",
-                            )
+                            buildCommand += [
+                                "--substituters",
+                                "https://cache.nixos.org",
+                            ]
+                            # Retry build with only CNS if it fails
+                            build = await run_console(*buildCommand)
+                            if build.returncode != 0:
+                                logger.error(
+                                    f"nix build (expression) failed: {build.returncode=}"
+                                )
+                                # Use GRPCError here, we don't need to log output again
+                                raise GRPCError(
+                                    Status.INVALID_ARGUMENT,
+                                    f"nix build (expression) failed: {build.returncode=} {build.stderr=}",
+                                )
 
-                    packagePath = Path(build.stdout.splitlines()[0])
-        else:
-            raise GRPCError(
-                Status.INVALID_ARGUMENT,
-                "Set either `expression` or `storePath` in volume attributes",
-            )
-
-        # Root directory for volume. Contains /nix, also contains "workdir" and
-        # "upperdir" if we're doing overlayfs
-        volumeRoot = CSI_VOLUMES / request.volume_id
-        # Capitalized to emphasise they're Nix environment variables
-        NIX_STATE_DIR = volumeRoot / "nix/var/nix"
-        # Create NIX_STATE_DIR where database will be initialized
-        NIX_STATE_DIR.mkdir(parents=True, exist_ok=True)
-
-        # Get closure
-        pathInfo = await run_captured(
-            "nix",
-            "path-info",
-            "--recursive",
-            packagePath,
-        )
-        if pathInfo.returncode != 0:
-            raise NixCsiError(
-                Status.INTERNAL,
-                f"nix path-info failed: {pathInfo.returncode=} {pathInfo.stderr=}",
-            )
-        paths = pathInfo.stdout.splitlines()
-
-        try:
-            # Copy closure to substore, rsync saves a lot of implementation
-            # headache here. --archive keeps all attributes, --hard-links
-            # hardlinks everything hardlinkable.
-            rsync = await run_captured(
-                "rsync",
-                "--one-file-system",
-                "--archive",
-                "--hard-links",
-                "--mkpath",
-                *paths,
-                volumeRoot / "nix/store",
-                semaphore=RSYNC_SEMAPHORE,  # Concurrency limits
-            )
-            if rsync.returncode != 0:
-                raise NixCsiError(
-                    Status.INTERNAL,
-                    f"rsync failed {rsync.returncode=} {rsync.stderr=}",
+                        packagePath = Path(build.stdout.splitlines()[0])
+            else:
+                raise GRPCError(
+                    Status.INVALID_ARGUMENT,
+                    "Set either `expression` or `storePath` in volume attributes",
                 )
 
-            # Link root derivation to /nix/var/result in the container. This is a "well-know" path
-            lnResult = await run_captured(
-                "ln",
-                "--force",
-                "--symbolic",
+            # Root directory for volume. Contains /nix, also contains "workdir" and
+            # "upperdir" if we're doing overlayfs
+            volumeRoot = CSI_VOLUMES / request.volume_id
+            # Capitalized to emphasise they're Nix environment variables
+            NIX_STATE_DIR = volumeRoot / "nix/var/nix"
+            # Create NIX_STATE_DIR where database will be initialized
+            NIX_STATE_DIR.mkdir(parents=True, exist_ok=True)
+
+            # Get closure
+            pathInfo = await run_captured(
+                "nix",
+                "path-info",
+                "--recursive",
                 packagePath,
-                volumeRoot / "nix/var/result",
             )
-            if lnResult.returncode != 0:
+            if pathInfo.returncode != 0:
                 raise NixCsiError(
                     Status.INTERNAL,
-                    f"ln1 failed {lnResult.returncode=} {lnResult.stdout=} {lnResult.stderr=}",
+                    f"nix path-info failed: {pathInfo.returncode=} {pathInfo.stderr=}",
                 )
+            paths = pathInfo.stdout.splitlines()
 
-            # gcroots in container
-            (NIX_STATE_DIR / "gcroots").mkdir(parents=True, exist_ok=True)
-            lnRoots = await run_captured(
-                "ln",
-                "--force",
-                "--symbolic",
-                "/nix/var/result",
-                NIX_STATE_DIR / "gcroots" / "result",
-            )
-            if lnRoots.returncode != 0:
+            try:
+                # Copy closure to substore, rsync saves a lot of implementation
+                # headache here. --archive keeps all attributes, --hard-links
+                # hardlinks everything hardlinkable.
+                rsync = await run_captured(
+                    "rsync",
+                    "--one-file-system",
+                    "--archive",
+                    "--hard-links",
+                    "--mkpath",
+                    *paths,
+                    volumeRoot / "nix/store",
+                )
+                if rsync.returncode != 0:
+                    raise NixCsiError(
+                        Status.INTERNAL,
+                        f"rsync failed {rsync.returncode=} {rsync.stderr=}",
+                    )
+
+                # Link root derivation to /nix/var/result in the container. This is a "well-know" path
+                lnResult = await run_captured(
+                    "ln",
+                    "--force",
+                    "--symbolic",
+                    packagePath,
+                    volumeRoot / "nix/var/result",
+                )
+                if lnResult.returncode != 0:
+                    raise NixCsiError(
+                        Status.INTERNAL,
+                        f"ln1 failed {lnResult.returncode=} {lnResult.stdout=} {lnResult.stderr=}",
+                    )
+
+                # gcroots in container
+                (NIX_STATE_DIR / "gcroots").mkdir(parents=True, exist_ok=True)
+                lnRoots = await run_captured(
+                    "ln",
+                    "--force",
+                    "--symbolic",
+                    "/nix/var/result",
+                    NIX_STATE_DIR / "gcroots" / "result",
+                )
+                if lnRoots.returncode != 0:
+                    raise NixCsiError(
+                        Status.INTERNAL,
+                        f"ln2 failed {lnRoots.returncode=} {lnRoots.stdout=} {lnRoots.stderr=}",
+                    )
+
+                # Create Nix database
+                # This is an execline script that runs nix-store --dump-db | NIX_STATE_DIR=something nix-store --load-db
+                nix_init_db = await run_captured(
+                    "nix_init_db",
+                    NIX_STATE_DIR,
+                    *paths,
+                )
+                if nix_init_db.returncode != 0:
+                    raise NixCsiError(
+                        Status.INTERNAL,
+                        f"nix_init_db failed {nix_init_db.returncode=} {nix_init_db.stdout=} {nix_init_db.stderr=}",
+                    )
+            except NixCsiError as ex:
+                # Remove gcroots if we failed something else
+                gcPath.unlink(missing_ok=True)
+                # Remove what we were working on
+                shutil.rmtree(volumeRoot, True)
+                raise ex
+
+            targetPath.mkdir(parents=True, exist_ok=True)
+            mountCommand = []
+            if request.readonly:
+                # For readonly we use a bind mount, the benefit is that different
+                # container stores using bindmounts will get the same inodes and
+                # share page cache with others, reducing host storage and memory usage.
+                mountCommand = [
+                    "mount",
+                    "--verbose",
+                    "--bind",
+                    "-o",
+                    "ro",
+                    volumeRoot / "nix",
+                    targetPath,
+                ]
+            else:
+                # For readwrite we use an overlayfs mount, the benefit here is that
+                # it works as CoW even if the underlying filesystem doesn't support
+                # it, reducing host storage usage.
+                workdir = volumeRoot / "workdir"
+                upperdir = volumeRoot / "upperdir"
+                workdir.mkdir(parents=True, exist_ok=True)
+                upperdir.mkdir(parents=True, exist_ok=True)
+                mountCommand = [
+                    "mount",
+                    "--verbose",
+                    "-t",
+                    "overlay",
+                    "overlay",
+                    "-o",
+                    f"rw,lowerdir={volumeRoot / 'nix'},upperdir={upperdir},workdir={workdir}",
+                    targetPath,
+                ]
+
+            mount = await run_console(*mountCommand)
+            if mount.returncode == MOUNT_ALREADY_MOUNTED:
+                logger.debug(f"Mount target {targetPath} was already mounted")
+            elif mount.returncode != 0:
                 raise NixCsiError(
                     Status.INTERNAL,
-                    f"ln2 failed {lnRoots.returncode=} {lnRoots.stdout=} {lnRoots.stderr=}",
+                    f"Failed to mount {mount.returncode=} {mount.stderr=}",
                 )
 
-            # Create Nix database
-            # This is an execline script that runs nix-store --dump-db | NIX_STATE_DIR=something nix-store --load-db
-            nix_init_db = await run_captured(
-                "nix_init_db",
-                NIX_STATE_DIR,
-                *paths,
-            )
-            if nix_init_db.returncode != 0:
-                raise NixCsiError(
-                    Status.INTERNAL,
-                    f"nix_init_db failed {nix_init_db.returncode=} {nix_init_db.stdout=} {nix_init_db.stderr=}",
-                )
-        except NixCsiError as ex:
-            # Remove gcroots if we failed something else
-            gcPath.unlink(missing_ok=True)
-            # Remove what we were working on
-            shutil.rmtree(volumeRoot, True)
-            raise ex
-
-        targetPath.mkdir(parents=True, exist_ok=True)
-        mountCommand = []
-        if request.readonly:
-            # For readonly we use a bind mount, the benefit is that different
-            # container stores using bindmounts will get the same inodes and
-            # share page cache with others, reducing host storage and memory usage.
-            mountCommand = [
-                "mount",
-                "--verbose",
-                "--bind",
-                "-o",
-                "ro",
-                volumeRoot / "nix",
-                targetPath,
-            ]
-        else:
-            # For readwrite we use an overlayfs mount, the benefit here is that
-            # it works as CoW even if the underlying filesystem doesn't support
-            # it, reducing host storage usage.
-            workdir = volumeRoot / "workdir"
-            upperdir = volumeRoot / "upperdir"
-            workdir.mkdir(parents=True, exist_ok=True)
-            upperdir.mkdir(parents=True, exist_ok=True)
-            mountCommand = [
-                "mount",
-                "--verbose",
-                "-t",
-                "overlay",
-                "overlay",
-                "-o",
-                f"rw,lowerdir={volumeRoot / 'nix'},upperdir={upperdir},workdir={workdir}",
-                targetPath,
-            ]
-
-        mount = await run_console(*mountCommand)
-        if mount.returncode == MOUNT_ALREADY_MOUNTED:
-            logger.debug(f"Mount target {targetPath} was already mounted")
-        elif mount.returncode != 0:
-            raise NixCsiError(
-                Status.INTERNAL,
-                f"Failed to mount {mount.returncode=} {mount.stderr=}",
-            )
-
-        reply = csi_pb2.NodePublishVolumeResponse()
-        await stream.send_message(reply)
+            reply = csi_pb2.NodePublishVolumeResponse()
+            await stream.send_message(reply)
 
         async def copyToCache():
             pathInfo = await run_captured(
