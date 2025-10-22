@@ -2,7 +2,6 @@
   buildPythonApplication,
   hatchling,
   csi-proto-python, # CSI GRPC bindings
-  cachetools,
   gitMinimal, # Lix requires Git CLI since it doesn't use libgit2
   lix, # We need a Nix implementation.... :)
   nix_init_db, # Import from one nix DB to another
@@ -10,6 +9,7 @@
   rsync, # hardlinking
   util-linuxMinimal, # mount, umount
   coreutils, # ln
+  kr8s, # Kubernetes API
 }:
 let
   pyproject = builtins.fromTOML (builtins.readFile ./pyproject.toml);
@@ -22,7 +22,6 @@ buildPythonApplication {
   build-system = [ hatchling ];
   dependencies = [
     csi-proto-python
-    cachetools
     gitMinimal
     lix
     nix_init_db
@@ -30,6 +29,7 @@ buildPythonApplication {
     rsync
     util-linuxMinimal
     coreutils
+    kr8s
   ];
   meta.mainProgram = "nix-csi";
 }

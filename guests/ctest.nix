@@ -1,7 +1,5 @@
-{
-  pkgs ? import <nixpkgs> { },
-}:
 let
+  pkgs = import <nixpkgs> { };
   inherit (pkgs) lib;
   dinixEval = (
     import <dinix> {
@@ -24,6 +22,7 @@ let
       ];
     }
   );
+
   ctest = pkgs.stdenv.mkDerivation {
     pname = "big-binary";
     version = "0.1";

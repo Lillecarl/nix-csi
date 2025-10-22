@@ -13,12 +13,12 @@ self: pkgs: {
         pipeline { nix-store --dump-db $@ }
         export USER nobody
         export NIX_STATE_DIR $1
-        exec nix-store --load-db
+        exec nix-store --load-db --option store local
       '';
 
   csi-proto-python = pkgs.python3Packages.callPackage ./csi-proto-python { };
   nix-csi = pkgs.python3Packages.callPackage ../python {
-    inherit (self) csi-proto-python;
+    inherit (self) csi-proto-python kr8s;
   };
   asyncache = pkgs.python3Packages.callPackage ./asyncache.nix { };
   python-jsonpath = pkgs.python3Packages.callPackage ./python-jsonpath.nix { };

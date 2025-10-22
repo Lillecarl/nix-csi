@@ -7,7 +7,6 @@ import socket
 import tempfile
 import time
 
-from cachetools import TTLCache
 from csi import csi_grpc, csi_pb2
 from google.protobuf.wrappers_pb2 import BoolValue
 from grpclib.const import Status
@@ -17,6 +16,7 @@ from hashlib import sha256
 from importlib import metadata
 from pathlib import Path
 from typing import Any, NamedTuple, Optional
+from . import runbuild
 
 logger = logging.getLogger("nix-csi")
 
@@ -29,7 +29,7 @@ MOUNT_ALREADY_MOUNTED = 32
 CSI_ROOT = Path("/nix/var/nix-csi")
 CSI_VOLUMES = CSI_ROOT / "volumes"
 NIX_GCROOTS = Path("/nix/var/nix/gcroots/nix-csi")
-NAMESPACE =  os.environ["KUBE_NAMESPACE"]
+NAMESPACE = os.environ["KUBE_NAMESPACE"]
 
 BUILD_SEMAPHORE = asyncio.Semaphore(5)
 RSYNC_SEMAPHORE = asyncio.Semaphore(1)
@@ -170,11 +170,6 @@ async def set_nix_path():
 
 
 class NodeServicer(csi_grpc.NodeBase):
-    # Use semaphore to limit concurrent builds of the same expression to one
-    expressionCache = TTLCache(maxsize=float("inf"), ttl=60)
-    # Cache path-info results
-    pathInfoCache = TTLCache(maxsize=float("inf"), ttl=60)
-
     async def NodePublishVolume(self, stream):
         request: csi_pb2.NodePublishVolumeRequest | None = await stream.recv_message()
         if request is None:
@@ -204,8 +199,6 @@ class NodeServicer(csi_grpc.NodeBase):
             buildCommand = [
                 "nix",
                 "build",
-                "--impure",
-                "--print-out-paths",
                 "--out-link",
                 gcPath,
                 # "installable"
@@ -222,11 +215,10 @@ class NodeServicer(csi_grpc.NodeBase):
                     "--substituters",
                     "https://cache.nixos.org",
                 ]
-                if os.getenv("BUILD_CACHE") == "true":
-                    build = await run_console(
-                        *buildCommand,
-                        semaphore=BUILD_SEMAPHORE,
-                    )
+                build = await run_console(
+                    *buildCommand,
+                    semaphore=BUILD_SEMAPHORE,
+                )
                 if build.returncode != 0:
                     logger.error(f"nix build (expression) failed: {build.returncode=}")
                     # Use GRPCError here, we don't need to log output again
@@ -237,72 +229,72 @@ class NodeServicer(csi_grpc.NodeBase):
 
             packagePath = Path(build.stdout.splitlines()[0])
         elif expression is not None:
-            expressionHash = sha256(expression.encode("utf-8")).hexdigest()
-            if expressionHash in self.expressionCache:
-                cacheEntry = self.expressionCache[expressionHash]
-                async with cacheEntry["semaphore"]:
-                    if not cacheEntry.get("result"):
-                        raise GRPCError(
-                            Status.INVALID_ARGUMENT,
-                            "cached build failure",
-                        )
-                    packagePath = cacheEntry["packagePath"]
-            else:
-                semaphore = asyncio.Semaphore()
-                self.expressionCache[expressionHash] = {
-                    "packagePath": packagePath,
-                    "semaphore": semaphore,
-                    "result": False,
-                }
-                async with semaphore:
-                    with tempfile.NamedTemporaryFile(mode="w", suffix=".nix") as f:
-                        expressionFile = Path(f.name)
-                        f.write(expression)
-                        f.flush()
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".nix") as f:
+                expressionFile = Path(f.name)
+                f.write(expression)
+                f.flush()
 
-                        buildCommand = [
-                            "nix",
-                            "build",
-                            "--impure",
-                            "--print-out-paths",
-                            "--out-link",
-                            gcPath,
-                            # "installable"
-                            "--file",
-                            expressionFile,
+                # eval expression
+                eval = await run_console(
+                    "nix", "eval", "--impure", "--raw", "--file", expressionFile
+                )
+                if eval.returncode != 0:
+                    # Use GRPCError here, we don't need to log output again
+                    raise NixCsiError(
+                        Status.INVALID_ARGUMENT,
+                        f"nix eval (expression) failed: {eval.returncode=} {eval.combined=}",
+                    )
+
+                storePath = eval.stdout
+
+                jSuccess = False
+                jobResult  = await runbuild.run(storePath, expression)
+                if jobResult[0]:
+                    buildResult = await run_captured("nix", "build", storePath)
+                    if buildResult.returncode == 0:
+                        packagePath = Path(storePath)
+                        jSuccess = True
+                        logger.debug("Success using job result")
+
+                if not jSuccess:
+                    buildCommand = [
+                        "nix",
+                        "build",
+                        "--impure",
+                        "--print-out-paths",
+                        "--out-link",
+                        gcPath,
+                        # "installable"
+                        "--file",
+                        expressionFile,
+                    ]
+
+                    # Build expression
+                    build = await run_console(
+                        *buildCommand,
+                        semaphore=BUILD_SEMAPHORE,
+                    )
+                    if build.returncode != 0:
+                        buildCommand += [
+                            "--substituters",
+                            "https://cache.nixos.org",
                         ]
-
-                        # Build expression
-                        build = await run_console(
-                            *buildCommand,
-                            semaphore=BUILD_SEMAPHORE,
-                        )
+                        if os.getenv("BUILD_CACHE") == "true":
+                            build = await run_console(
+                                *buildCommand,
+                                semaphore=BUILD_SEMAPHORE,
+                            )
                         if build.returncode != 0:
-                            buildCommand += [
-                                "--substituters",
-                                "https://cache.nixos.org",
-                            ]
-                            if os.getenv("BUILD_CACHE") == "true":
-                                build = await run_console(
-                                    *buildCommand,
-                                    semaphore=BUILD_SEMAPHORE,
-                                )
-                            if build.returncode != 0:
-                                logger.error(
-                                    f"nix build (expression) failed: {build.returncode=}"
-                                )
-                                # Use GRPCError here, we don't need to log output again
-                                raise GRPCError(
-                                    Status.INVALID_ARGUMENT,
-                                    f"nix build (expression) failed: {build.returncode=} {build.stderr=}",
-                                )
+                            logger.error(
+                                f"nix build (expression) failed: {build.returncode=}"
+                            )
+                            # Use GRPCError here, we don't need to log output again
+                            raise GRPCError(
+                                Status.INVALID_ARGUMENT,
+                                f"nix build (expression) failed: {build.returncode=} {build.stderr=}",
+                            )
 
-                        packagePath = Path(build.stdout.splitlines()[0])
-                        self.expressionCache[expressionHash]["packagePath"] = (
-                            packagePath
-                        )
-                        self.expressionCache[expressionHash]["result"] = True
-
+                    packagePath = Path(build.stdout.splitlines()[0])
         else:
             raise GRPCError(
                 Status.INVALID_ARGUMENT,
@@ -320,24 +312,19 @@ class NodeServicer(csi_grpc.NodeBase):
         # Create NIX_STATE_DIR where database will be initialized
         NIX_STATE_DIR.mkdir(parents=True, exist_ok=True)
 
-        paths = []
-        if packagePath in self.pathInfoCache:
-            paths = self.pathInfoCache[packagePath]
-        else:
-            # Get dependency paths
-            pathInfo = await run_captured(
-                "nix",
-                "path-info",
-                "--recursive",
-                packagePath,
+        # Get dependency paths
+        pathInfo = await run_captured(
+            "nix",
+            "path-info",
+            "--recursive",
+            packagePath,
+        )
+        if pathInfo.returncode != 0:
+            raise NixCsiError(
+                Status.INTERNAL,
+                f"nix path-info failed: {pathInfo.returncode=} {pathInfo.stderr=}",
             )
-            if pathInfo.returncode != 0:
-                raise NixCsiError(
-                    Status.INTERNAL,
-                    f"nix path-info failed: {pathInfo.returncode=} {pathInfo.stderr=}",
-                )
-            paths = pathInfo.stdout.splitlines()
-            self.pathInfoCache[packagePath] = paths
+        paths = pathInfo.stdout.splitlines()
 
         try:
             # Copy dependencies to substore, rsync saves a lot of implementation headache
