@@ -18,15 +18,14 @@ def parse_args():
 async def async_main():
     args = parse_args()
     logging.basicConfig(
-        level=getattr(logging, args.loglevel),
+        level=logging.WARN,
         format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
     )
     logger = logging.getLogger("nix-csi")
     loglevel_str = logging.getLevelName(logger.getEffectiveLevel())
     logger.info(f"Current log level: {loglevel_str}")
 
-    # Disable hpack logging
-    logging.getLogger("hpack.hpack").setLevel(logging.INFO)
+    logging.getLogger("nix-csi").setLevel(getattr(logging, args.loglevel))
 
     await service.serve()
 
