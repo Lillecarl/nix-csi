@@ -296,17 +296,14 @@ class NodeServicer(csi_grpc.NodeBase):
             )
 
         # Root directory for volume. Contains /nix, also contains "workdir" and
-        # "upperdir" if we're doing overlayfs mounting
+        # "upperdir" if we're doing overlayfs
         volumeRoot = CSI_VOLUMES / request.volume_id
-        # Where the root derivation will be linked, so users have a known path
-        # to execute programs from.
-        packageResultPath = volumeRoot / "nix/var/result"
         # Capitalized to emphasise they're Nix environment variables
         NIX_STATE_DIR = volumeRoot / "nix/var/nix"
         # Create NIX_STATE_DIR where database will be initialized
         NIX_STATE_DIR.mkdir(parents=True, exist_ok=True)
 
-        # Get dependency paths
+        # Get closure
         pathInfo = await run_captured(
             "nix",
             "path-info",
@@ -321,9 +318,9 @@ class NodeServicer(csi_grpc.NodeBase):
         paths = pathInfo.stdout.splitlines()
 
         try:
-            # Copy dependencies to substore, rsync saves a lot of implementation headache
-            # here. --archive keeps all attributes, --hard-links hardlinks everything
-            # it can while replicating symlinks exactly as they were.
+            # Copy closure to substore, rsync saves a lot of implementation
+            # headache here. --archive keeps all attributes, --hard-links
+            # hardlinks everything hardlinkable.
             rsync = await run_captured(
                 "rsync",
                 "--one-file-system",
@@ -332,7 +329,7 @@ class NodeServicer(csi_grpc.NodeBase):
                 "--mkpath",
                 *paths,
                 volumeRoot / "nix/store",
-                semaphore=RSYNC_SEMAPHORE,
+                semaphore=RSYNC_SEMAPHORE,  # Concurrency limits
             )
             if rsync.returncode != 0:
                 raise NixCsiError(
@@ -342,7 +339,11 @@ class NodeServicer(csi_grpc.NodeBase):
 
             # Link root derivation to /nix/var/result in the container. This is a "well-know" path
             lnResult = await run_captured(
-                "ln", "--force", "--symbolic", packagePath, packageResultPath
+                "ln",
+                "--force",
+                "--symbolic",
+                packagePath,
+                volumeRoot / "nix/var/result",
             )
             if lnResult.returncode != 0:
                 raise NixCsiError(
@@ -350,7 +351,7 @@ class NodeServicer(csi_grpc.NodeBase):
                     f"ln1 failed {lnResult.returncode=} {lnResult.stdout=} {lnResult.stderr=}",
                 )
 
-            # gcroots
+            # gcroots in container
             (NIX_STATE_DIR / "gcroots").mkdir(parents=True, exist_ok=True)
             lnRoots = await run_captured(
                 "ln",
@@ -384,30 +385,21 @@ class NodeServicer(csi_grpc.NodeBase):
             shutil.rmtree(volumeRoot, True)
             raise ex
 
-        # The directory we're mounting from
-        sourcePath = volumeRoot / "nix"
-
         targetPath.mkdir(parents=True, exist_ok=True)
+        mountCommand = []
         if request.readonly:
             # For readonly we use a bind mount, the benefit is that different
             # container stores using bindmounts will get the same inodes and
             # share page cache with others, reducing host storage and memory usage.
-            mount = await run_console(
+            mountCommand = [
                 "mount",
                 "--verbose",
                 "--bind",
                 "-o",
                 "ro",
-                sourcePath,
+                volumeRoot / "nix",
                 targetPath,
-            )
-            if mount.returncode == MOUNT_ALREADY_MOUNTED:
-                logger.debug(f"Mount target {targetPath} was already mounted")
-            elif mount.returncode != 0:
-                raise NixCsiError(
-                    Status.INTERNAL,
-                    f"Failed to bind mount {mount.returncode=} {mount.stderr=}",
-                )
+            ]
         else:
             # For readwrite we use an overlayfs mount, the benefit here is that
             # it works as CoW even if the underlying filesystem doesn't support
@@ -416,23 +408,25 @@ class NodeServicer(csi_grpc.NodeBase):
             upperdir = volumeRoot / "upperdir"
             workdir.mkdir(parents=True, exist_ok=True)
             upperdir.mkdir(parents=True, exist_ok=True)
-            mount = await run_console(
+            mountCommand = [
                 "mount",
                 "--verbose",
                 "-t",
                 "overlay",
                 "overlay",
                 "-o",
-                f"rw,lowerdir={sourcePath},upperdir={upperdir},workdir={workdir}",
+                f"rw,lowerdir={volumeRoot / 'nix'},upperdir={upperdir},workdir={workdir}",
                 targetPath,
+            ]
+
+        mount = await run_console(*mountCommand)
+        if mount.returncode == MOUNT_ALREADY_MOUNTED:
+            logger.debug(f"Mount target {targetPath} was already mounted")
+        elif mount.returncode != 0:
+            raise NixCsiError(
+                Status.INTERNAL,
+                f"Failed to mount {mount.returncode=} {mount.stderr=}",
             )
-            if mount.returncode == MOUNT_ALREADY_MOUNTED:
-                logger.debug(f"Mount target {targetPath} was already mounted")
-            elif mount.returncode != 0:
-                raise NixCsiError(
-                    Status.INTERNAL,
-                    f"Failed to overlayfs mount {mount.returncode=} {mount.stderr=}",
-                )
 
         reply = csi_pb2.NodePublishVolumeResponse()
         await stream.send_message(reply)
