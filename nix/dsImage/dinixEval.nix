@@ -43,7 +43,6 @@ import dinix {
         };
         services.nix-daemon = {
           command = "${lib.getExe' pkgs.lix "nix-daemon"} --daemon --store local";
-          options = [ "shares-console" ];
           depends-on = [ "setup" ];
         };
         services.gc = {
