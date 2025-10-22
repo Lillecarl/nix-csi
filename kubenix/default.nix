@@ -8,6 +8,7 @@
     ./storageclass.nix
     ./config.nix
     ./cache.nix
+    ./rbac.nix
     ./ctest.nix
     ./undeploy.nix
   ];

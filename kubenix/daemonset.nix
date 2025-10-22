@@ -33,6 +33,7 @@ in
             metadata.labels.app = "nix-csi-node";
             metadata.annotations."kubectl.kubernetes.io/default-container" = "nix-csi-node";
             spec = {
+              serviceAccountName = "nix-csi";
               initContainers = [
                 {
                   name = "populate-nix";
