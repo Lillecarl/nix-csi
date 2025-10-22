@@ -29,6 +29,7 @@ MOUNT_ALREADY_MOUNTED = 32
 CSI_ROOT = Path("/nix/var/nix-csi")
 CSI_VOLUMES = CSI_ROOT / "volumes"
 NIX_GCROOTS = Path("/nix/var/nix/gcroots/nix-csi")
+NAMESPACE =  os.environ["KUBE_NAMESPACE"]
 
 BUILD_SEMAPHORE = asyncio.Semaphore(5)
 RSYNC_SEMAPHORE = asyncio.Semaphore(1)
