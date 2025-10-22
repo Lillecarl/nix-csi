@@ -15,10 +15,10 @@ let
         #! ${pkgs.runtimeShell}
         export PATH=${lib.makeBinPath [ pkgs.rsync ]}:$PATH
         mkdir --parents $HOME
-        rsync --verbose --archive ${pkgs.dockerTools.binSh}/ /
-        rsync --verbose --archive ${pkgs.dockerTools.fakeNss}/ /
-        rsync --verbose --archive ${pkgs.dockerTools.caCertificates}/ /
-        rsync --verbose --archive ${pkgs.dockerTools.usrBinEnv}/ /
+        rsync --archive ${pkgs.dockerTools.binSh}/ /
+        rsync --archive ${pkgs.dockerTools.caCertificates}/ /
+        rsync --archive ${pkgs.dockerTools.fakeNss}/ /
+        rsync --archive ${pkgs.dockerTools.usrBinEnv}/ /
         source /buildscript/run
       '';
 
@@ -39,6 +39,9 @@ let
             ]
           )
         }
+        # only need fakeNss for nix-store operations
+        rsync --archive ${pkgs.dockerTools.fakeNss}/ /
+        # copy & merge images /nix with stateful /nix
         rsync --archive --ignore-existing --one-file-system /nix/ /nix-volume/
         # Link rootEnv to /nix/var/result
         ln --symbolic --force ${rootEnv} /nix-volume/var/result
@@ -68,8 +71,6 @@ nix2container.buildImage {
   name = "nix-csi";
   initializeNixDatabase = true;
   maxLayers = 120;
-  # Include NSS so we can run Nix in the init container
-  copyToRoot = with pkgs; [ dockerTools.fakeNss ];
   # This images only function is to copy itself into a hostPath mount
   config.Entrypoint = [ (lib.getExe initCopy) ];
 }
