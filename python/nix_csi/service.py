@@ -192,7 +192,6 @@ class NodeServicer(csi_grpc.NodeBase):
                 "build",
                 "--out-link",
                 gcPath,
-                # "installable"
                 storePath,
             ]
 
@@ -217,37 +216,42 @@ class NodeServicer(csi_grpc.NodeBase):
                         Status.INVALID_ARGUMENT,
                         f"nix build (expression) failed: {build.returncode=} {build.stderr=}",
                     )
-
             packagePath = Path(build.stdout.splitlines()[0])
+
         elif expression is not None:
             with tempfile.NamedTemporaryFile(mode="w", suffix=".nix") as f:
                 expressionFile = Path(f.name)
                 f.write(expression)
                 f.flush()
 
-                # eval expression
-                eval = await run_console(
+                expressionSuccess = False
+                # eval expression to get storePath
+                eval = await run_captured(
                     "nix", "eval", "--impure", "--raw", "--file", expressionFile
                 )
                 if eval.returncode != 0:
-                    # Use GRPCError here, we don't need to log output again
-                    raise NixCsiError(
+                    raise GRPCError(
                         Status.INVALID_ARGUMENT,
                         f"nix eval (expression) failed: {eval.returncode=} {eval.combined=}",
                     )
-
                 storePath = eval.stdout
 
-                jSuccess = False
-                jobResult  = await runbuild.run(storePath, expression)
-                if jobResult[0]:
-                    buildResult = await run_captured("nix", "build", storePath)
-                    if buildResult.returncode == 0:
-                        packagePath = Path(storePath)
-                        jSuccess = True
-                        logger.debug("Success using job result")
+                # Shortcut if we already have path
+                if Path(storePath).exists():
+                    expressionSuccess = True
+                    packagePath = Path(storePath)
 
-                if not jSuccess:
+                # Spawn a Job to build the expression
+                if not expressionSuccess:
+                    jobResult = await runbuild.run(storePath, expression)
+                    if jobResult[0]:
+                        buildResult = await run_captured("nix", "build", storePath)
+                        if buildResult.returncode == 0:
+                            packagePath = Path(buildResult.stdout.splitlines()[0])
+                            expressionSuccess = True
+
+                # Build within CSI if Job build failed, this will be removed
+                if not expressionSuccess:
                     buildCommand = [
                         "nix",
                         "build",
@@ -255,7 +259,6 @@ class NodeServicer(csi_grpc.NodeBase):
                         "--print-out-paths",
                         "--out-link",
                         gcPath,
-                        # "installable"
                         "--file",
                         expressionFile,
                     ]
@@ -270,11 +273,11 @@ class NodeServicer(csi_grpc.NodeBase):
                             "--substituters",
                             "https://cache.nixos.org",
                         ]
-                        if os.getenv("BUILD_CACHE") == "true":
-                            build = await run_console(
-                                *buildCommand,
-                                semaphore=BUILD_SEMAPHORE,
-                            )
+                        # Retry build with only CNS if it fails
+                        build = await run_console(
+                            *buildCommand,
+                            semaphore=BUILD_SEMAPHORE,
+                        )
                         if build.returncode != 0:
                             logger.error(
                                 f"nix build (expression) failed: {build.returncode=}"
