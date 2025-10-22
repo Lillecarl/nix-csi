@@ -180,15 +180,6 @@ class NodeServicer(csi_grpc.NodeBase):
         logger.info(f"{request.volume_id=}")
 
         targetPath = Path(request.target_path)
-
-        # Check if already mounted (idempotency)
-        check_mount = await run_captured("mountpoint", "-q", targetPath)
-        if check_mount.returncode == 0:
-            logger.info(f"Volume {request.volume_id} already mounted at {targetPath}")
-            reply = csi_pb2.NodePublishVolumeResponse()
-            await stream.send_message(reply)
-            return
-
         expression = request.volume_context.get("expression")
         storePath = request.volume_context.get("storePath")
         packagePath: Path | None = None
