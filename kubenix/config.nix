@@ -13,7 +13,6 @@ in
             set -x
             nix build \
               --impure \
-              --rebuild \
               --no-link \
               --print-out-paths \
               --file \
