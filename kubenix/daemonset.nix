@@ -62,6 +62,10 @@ in
                       valueFrom.fieldRef.fieldPath = "spec.nodeName";
                     }
                     {
+                      name = "KUBE_NAMESPACE";
+                      valueFrom.fieldRef.fieldPath = "metadata.namespace";
+                    }
+                    {
                       name = "PATH";
                       value = "/nix/var/result/bin";
                     }
