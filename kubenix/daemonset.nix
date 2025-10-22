@@ -33,6 +33,16 @@ in
             metadata.labels.app = "nix-csi-node";
             metadata.annotations."kubectl.kubernetes.io/default-container" = "nix-csi-node";
             spec = {
+              tolerations = [
+                {
+                  operator = "Exists";
+                  effect = "NoSchedule";
+                }
+                {
+                  operator = "Exists";
+                  effect = "NoExecute";
+                }
+              ];
               serviceAccountName = "nix-csi";
               initContainers = [
                 {
