@@ -35,7 +35,22 @@ import dinix {
         services.nix-csi = {
           command = "${lib.getExe pkgs.nix-csi} --loglevel DEBUG";
           options = [ "shares-console" ];
+          depends-on = [
+            "setup"
+            "nix-daemon"
+            "gc"
+          ];
+        };
+        services.nix-daemon = {
+          command = "${lib.getExe' pkgs.lix "nix-daemon"} --daemon --store local";
+          options = [ "shares-console" ];
           depends-on = [ "setup" ];
+        };
+        services.gc = {
+          type = "scripted";
+          command = "${lib.getExe' pkgs.lix "nix-store"} --gc";
+          options = [ "shares-console" ];
+          depends-on = [ "nix-daemon" ];
         };
         # set up root filesystem with paths required for a Linux system to function normally
         services.setup = {
@@ -52,13 +67,13 @@ import dinix {
                     with pkgs;
                     [
                       rsync
-                      uutils-coreutils-noprefix
+                      coreutils
                       lix
                     ]
                   )
                 }
                 mkdir --parents /usr/bin
-                ln --symbolic --force ${lib.getExe' pkgs.uutils-coreutils-noprefix "env"} /usr/bin/env
+                ln --symbolic --force ${lib.getExe' pkgs.coreutils "env"} /usr/bin/env
                 mkdir --parents /tmp
                 mkdir --parents ''${HOME}
                 rsync --verbose --archive ${fakeNss}/ /
@@ -68,7 +83,6 @@ import dinix {
                 # Remove nix2container gcroots (they might be old, /nix/var/result is a valid gcroot)
                 rm --recursive --force /nix/var/nix/gcroots/docker
                 # Collect garbage on startup
-                nix-store --gc
               ''
           );
         };

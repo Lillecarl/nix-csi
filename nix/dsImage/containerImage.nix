@@ -8,6 +8,20 @@
 }:
 let
   lib = pkgs.lib;
+
+  build =
+    pkgs.writeScriptBin "build" # bash
+      ''
+        #! ${pkgs.runtimeShell}
+        export PATH=${lib.makeBinPath [ pkgs.rsync ]}:$PATH
+        mkdir --parents $HOME
+        rsync --verbose --archive ${pkgs.dockerTools.binSh}/ /
+        rsync --verbose --archive ${pkgs.dockerTools.fakeNss}/ /
+        rsync --verbose --archive ${pkgs.dockerTools.caCertificates}/ /
+        rsync --verbose --archive ${pkgs.dockerTools.usrBinEnv}/ /
+        source /buildscript/run
+      '';
+
   initCopy =
     pkgs.writeScriptBin "initCopy" # bash
       ''
@@ -19,7 +33,7 @@ let
             with pkgs;
             [
               rsync
-              uutils-coreutils-noprefix
+              coreutils
               lix
               nix_init_db
             ]
@@ -43,8 +57,10 @@ let
       # and development purposes
       dinixEval.config.containerWrapper
       fishMinimal
-      uutils-coreutils-noprefix
+      coreutils
       lix
+      build
+      util-linuxMinimal
     ];
   };
 in
