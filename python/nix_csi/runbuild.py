@@ -126,7 +126,7 @@ async def run(storePath: str, expression: str):
                             }
                         },
                     },
-                    "backoffLimit": 0,  # amount of restarts allowed
+                    "backoffLimit": 1,  # amount of restarts allowed
                 },
             },
             NAMESPACE,
