@@ -66,15 +66,18 @@ let
             services.boot = {
               depends-on = [
                 "nix-serve"
-              ];
-              waits-for = [
                 "openssh"
+                "nix-daemon"
               ];
             };
             services.openssh = {
               type = "process";
               command = "${lib.getExe' pkgs.openssh "sshd"} -D -f /etc/ssh/sshd_config -e";
               options = [ "shares-console" ];
+              depends-on = [ "setup" ];
+            };
+            services.nix-daemon = {
+              command = "${lib.getExe' pkgs.lix "nix-daemon"} --daemon --store local";
               depends-on = [ "setup" ];
             };
             services.nix-serve = {
