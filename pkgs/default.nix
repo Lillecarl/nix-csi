@@ -10,7 +10,7 @@ self: pkgs: {
       ''
         #! ${self.lib.getExe' pkgs.execline "execlineb"} -s1
         emptyenv -p
-        pipeline { nix-store --dump-db $@ }
+        pipeline { nix-store --option store local --dump-db $@ }
         export USER nobody
         export NIX_STATE_DIR $1
         exec nix-store --load-db --option store local

@@ -8,10 +8,10 @@ let
       ''
         #! ${lib.getExe' pkgs.execline "execlineb"} -s1
         emptyenv -p
-        pipeline { nix-store --dump-db $@ }
+        pipeline { nix-store --option store local --dump-db $@ }
         export USER nobody
         export NIX_STATE_DIR $1
-        exec nix-store --load-db
+        exec nix-store --load-db --option store local
       '';
   fakeNss = pkgs.buildEnv {
     name = "fakeNss";
@@ -54,7 +54,7 @@ let
         # /nix in the runtime container.
         rsync --archive --ignore-existing --one-file-system /nix/ /nix-volume/
         # Import Nix database from bootstrapping mount
-        nix_init_db /nix-volume/var/nix $(nix path-info --all)
+        nix_init_db /nix-volume/var/nix $(nix path-info --option store local --all)
       '';
 
   dinixEval = (

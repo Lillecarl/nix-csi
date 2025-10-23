@@ -46,7 +46,7 @@ let
         # Link rootEnv to /nix/var/result
         ln --symbolic --force ${rootEnv} /nix-volume/var/result
         # Import(merge) Nix database with paths from image
-        nix_init_db /nix-volume/var/nix $(nix path-info --all)
+        nix_init_db /nix-volume/var/nix $(nix path-info --option store local --all)
         # Add gcroot for result, /nix/var/result will be available in the
         # runtime container.
         mkdir --parents /nix-volume/var/nix/gcroots/nix-csi
