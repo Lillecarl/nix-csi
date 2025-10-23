@@ -32,7 +32,7 @@ in
           # Enable common features
           experimental-features = nix-command flakes auto-allocate-uids fetch-closure pipe-operator
           # binary cache configuration
-          ${lib.optionalString cfg.enableBinaryCache ''
+          ${lib.optionalString cfg.cache.enable ''
             trusted-public-keys = ${builtins.readFile ../cache-public} cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
             substituters = http://nix-cache.${cfg.namespace}.svc https://cache.nixos.org
           ''}

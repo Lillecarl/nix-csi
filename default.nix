@@ -76,7 +76,10 @@ let
         {
           config = {
             nix-csi.image = imageRef;
-            nix-csi.enableBinaryCache = true;
+            nix-csi.cache = {
+              enable = true;
+              storageClassName = "local-path";
+            };
             kluctl.discriminator = "nix-csi";
           };
         }

@@ -3,8 +3,14 @@ let
   cfg = config.nix-csi;
 in
 {
-  config = lib.mkIf cfg.enable {
-    kubernetes.resources.${cfg.namespace} = lib.mkIf (cfg.enableBinaryCache) {
+  options.nix-csi.cache = {
+    enable = lib.mkEnableOption "nix-serve-ng";
+    storageClassName = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+    };
+  };
+  config = lib.mkIf cfg.cache.enable {
+    kubernetes.resources.${cfg.namespace} = {
       # Mounts to /etc/nix-serve
       Secret.nix-serve = {
         stringData.secret = builtins.readFile ../cache-secret;
@@ -137,25 +143,19 @@ in
                     volumeAttributes.expression = builtins.readFile ../guests/cache.nix;
                   };
                 }
-                {
-                  name = "nix-cache";
-                  hostPath = {
-                    path = "/var/lib/nix-csi-cache";
-                    type = "DirectoryOrCreate";
-                  };
-                }
               ];
             };
           };
-          # volumeClaimTemplates = [
-          #   {
-          #     metadata.name = "nix-cache";
-          #     spec = {
-          #       accessModes = [ "ReadWriteOnce" ];
-          #       resources.requests.storage = "10Gi";
-          #     };
-          #   }
-          # ];
+          volumeClaimTemplates = [
+            {
+              metadata.name = "nix-cache";
+              spec = {
+                accessModes = [ "ReadWriteOnce" ];
+                resources.requests.storage = "10Gi";
+                inherit (cfg.cache) storageClassName;
+              };
+            }
+          ];
         };
       };
 

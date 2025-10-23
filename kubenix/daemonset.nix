@@ -6,7 +6,7 @@ in
   config = lib.mkIf cfg.enable {
     kubernetes.resources.${cfg.namespace} = {
       # mounts to /nix/var/nix-csi/home/.ssh
-      Secret.sshc = lib.mkIf cfg.enableBinaryCache {
+      Secret.sshc = lib.mkIf cfg.cache.enable {
         stringData = {
           known_hosts = "nix-cache.${cfg.namespace}.svc ${builtins.readFile ../id_ed25519.pub}";
           id_ed25519 = builtins.readFile ../id_ed25519;
@@ -90,7 +90,7 @@ in
                     }
                     {
                       name = "BUILD_CACHE";
-                      value = lib.boolToString cfg.enableBinaryCache;
+                      value = lib.boolToString cfg.cache.enable;
                     }
                   ];
                   volumeMounts = [
@@ -117,7 +117,7 @@ in
                       mountPath = "/etc/nix";
                     }
                   ]
-                  ++ lib.optional cfg.enableBinaryCache {
+                  ++ lib.optional cfg.cache.enable {
                     name = "sshc";
                     mountPath = "/etc/sshc";
                   };
@@ -198,7 +198,7 @@ in
                   configMap.name = "nix-config";
                 }
               ]
-              ++ lib.optional cfg.enableBinaryCache {
+              ++ lib.optional cfg.cache.enable {
                 name = "sshc";
                 secret.secretName = "sshc";
               };

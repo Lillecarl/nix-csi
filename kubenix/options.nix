@@ -14,12 +14,6 @@
       type = lib.types.str;
       default = "default";
     };
-    # This is experimental at best, don't use it
-    enableBinaryCache = lib.mkOption {
-      description = "Enable deployment of a cluster-internal nix binary cache";
-      type = lib.types.bool;
-      default = false;
-    };
     image = lib.mkOption {
       type = lib.types.str;
       default =
