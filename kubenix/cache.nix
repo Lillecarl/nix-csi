@@ -163,7 +163,7 @@ in
         };
       };
 
-      Service.nix-cache-ci = {
+      Service.nix-cache = {
         spec = {
           selector.app = "nix-cache";
           ports = [
