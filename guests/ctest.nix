@@ -1,27 +1,28 @@
+{
+  pkgs ? import <nixpkgs> { },
+  dinix ? import <dinix>,
+}:
 let
-  pkgs = import <nixpkgs> { };
   inherit (pkgs) lib;
-  dinixEval = (
-    import <dinix> {
-      inherit pkgs;
-      modules = [
-        {
-          config = {
-            services.boot = {
-              depends-on = [
-                "ctest"
-              ];
-            };
-            services.ctest = {
-              type = "process";
-              command = "${lib.getExe ctest}";
-              options = [ "shares-console" ];
-            };
+  dinixEval = (dinix {
+    inherit pkgs;
+    modules = [
+      {
+        config = {
+          services.boot = {
+            depends-on = [
+              "ctest"
+            ];
           };
-        }
-      ];
-    }
-  );
+          services.ctest = {
+            type = "process";
+            command = "${lib.getExe ctest}";
+            options = [ "shares-console" ];
+          };
+        };
+      }
+    ];
+  });
 
   ctest = pkgs.stdenv.mkDerivation {
     pname = "big-binary";

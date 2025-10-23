@@ -35,6 +35,7 @@ NAMESPACE = os.environ["KUBE_NAMESPACE"]
 
 RSYNC_CONCURRENCY = Semaphore(1)
 
+
 class NixCsiError(GRPCError):
     def __init__(
         self,
@@ -182,11 +183,15 @@ class NodeServicer(csi_grpc.NodeBase):
         logger.info(f"{request.target_path=}")
         logger.info(f"{request.volume_id=}")
 
+        # TODO: Only do this on startup?
+        system = (await run_captured("nix", "eval", "--raw", "--impure", "--expr", "builtins.currentSystem")).stdout
+
         targetPath = Path(request.target_path)
         expression = request.volume_context.get("expression")
-        storePath = request.volume_context.get("storePath")
+        storePath = request.volume_context.get(system)
         packagePath: Path = Path("/nonexistent/path/that/should/never/exist")
         gcPath = CSI_GCROOTS / request.volume_id
+
 
         if storePath is not None:
             packagePathCacheResult = self.packagePathCache.get(storePath)
@@ -197,6 +202,7 @@ class NodeServicer(csi_grpc.NodeBase):
                 buildCommand = [
                     "nix",
                     "build",
+                    "--print-out-paths",
                     "--out-link",
                     gcPath,
                     storePath,
@@ -229,13 +235,21 @@ class NodeServicer(csi_grpc.NodeBase):
                     f.flush()
 
                     packagePathCacheResult = self.packagePathCache.get(expression)
-                    if packagePathCacheResult is not None and packagePathCacheResult.exists():
+                    if (
+                        packagePathCacheResult is not None
+                        and packagePathCacheResult.exists()
+                    ):
                         packagePath = packagePathCacheResult
                         logger.debug("Package path from cache")
                     else:
                         # eval expression to get storePath
                         eval = await run_captured(
-                            "nix", "eval", "--impure", "--raw", "--file", expressionFile
+                            "nix",
+                            "eval",
+                            "--raw",
+                            "--impure",
+                            "--expr",
+                            f"import {expressionFile} {{}}",
                         )
                         if eval.returncode != 0:
                             raise GRPCError(
@@ -265,8 +279,8 @@ class NodeServicer(csi_grpc.NodeBase):
                             "--print-out-paths",
                             "--out-link",
                             gcPath,
-                            "--file",
-                            expressionFile,
+                            "--expr",
+                            f"import {expressionFile} {{}}",
                         ]
 
                         # Build expression
@@ -444,21 +458,34 @@ class NodeServicer(csi_grpc.NodeBase):
         await stream.send_message(reply)
 
         async def copyToCache():
-            pathInfo = await run_captured(
+            copyPaths = []
+            pathInfoDrv = await run_captured(
                 "nix",
                 "path-info",
                 "--recursive",
                 "--derivation",
                 packagePath,
             )
-            if pathInfo.returncode != 0:
+            if pathInfoDrv.returncode == 0:
+                copyPaths += pathInfoDrv.stdout.splitlines()
+
+            pathInfo = await run_captured(
+                "nix",
+                "path-info",
+                "--recursive",
+                packagePath,
+            )
+            if pathInfo.returncode == 0:
+                copyPaths += pathInfo.stdout.splitlines()
+
+            if pathInfoDrv.returncode != 0 and pathInfo.returncode != 0:
                 logger.error(
                     "Unable to copy because path-info failed, shouldn't be possible"
                 )
                 return
 
             # Filter away derivation files
-            paths = {p for p in pathInfo.stdout.splitlines() if not p.endswith(".drv")}
+            paths = {p for p in copyPaths if not p.endswith(".drv")}
             for _ in range(6):
                 nixCopy = await run_captured(
                     "nix", "copy", "--to", "ssh://nix-cache", *paths

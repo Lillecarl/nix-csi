@@ -1,5 +1,8 @@
+{
+  pkgs ? import <nixpkgs> { },
+  dinix ? import <dinix>,
+}:
 let
-  pkgs = import <nixpkgs> { };
   lib = pkgs.lib;
   # This should be in sync with the one from ../pkgs/default.nix we must copy it
   # here since this is executed as a standalone expression without the repo
@@ -58,7 +61,7 @@ let
       '';
 
   dinixEval = (
-    import <dinix> {
+    dinix {
       inherit pkgs;
       modules = [
         {

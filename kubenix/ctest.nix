@@ -1,4 +1,9 @@
-{ config, lib, ... }:
+{
+  config,
+  pkgs,
+  lib,
+  ...
+}:
 let
   cfg = config.nix-csi;
 in
@@ -44,6 +49,10 @@ in
                   driver = "nix.csi.store";
                   readOnly = true;
                   volumeAttributes.expression = builtins.readFile ../guests/ctest.nix;
+                  volumeAttributes.${pkgs.system} = import ../guests/ctest.nix {
+                    inherit pkgs;
+                    dinix = import /home/lillecarl/Code/dinix;
+                  };
                 };
               }
             ];
