@@ -207,7 +207,7 @@ on
       '';
   uploadScratch =
     let
-      scratchVersion = "1.0.0";
+      scratchVersion = "1.0.1";
       scratchUrl = system: "quay.io/nix-csi/scratch:${scratchVersion}-${system}";
       scratchManifest = "quay.io/nix-csi/scratch:${scratchVersion}";
     in
@@ -217,9 +217,13 @@ on
         set -euo pipefail
         set -x
         # Build and publish scratch image(s)
-        buildah commit $(buildah from --platform linux/amd64 scratch) ${scratchUrl on.pkgs.system}
+        container=$(buildah from --platform linux/amd64 scratch)
+        buildah config --env "PATH=/nix/var/result/bin" $container
+        buildah commit $container ${scratchUrl on.pkgs.system}
         buildah push ${scratchUrl on.pkgs.system}
-        buildah commit $(buildah from --platform linux/arm64 scratch) ${scratchUrl off.pkgs.system}
+        container=$(buildah from --platform linux/amd64 scratch)
+        buildah config --env "PATH=/nix/var/result/bin" $container
+        buildah commit $container ${scratchUrl off.pkgs.system}
         buildah push ${scratchUrl off.pkgs.system}
         buildah manifest rm ${scratchManifest} &>/dev/null || true
         buildah manifest create ${scratchManifest}
