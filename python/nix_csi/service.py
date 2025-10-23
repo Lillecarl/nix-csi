@@ -12,7 +12,6 @@ from google.protobuf.wrappers_pb2 import BoolValue
 from grpclib.const import Status
 from grpclib.exceptions import GRPCError
 from grpclib.server import Server
-from hashlib import sha256
 from importlib import metadata
 from pathlib import Path
 from typing import Any, NamedTuple, Optional, List
@@ -31,7 +30,7 @@ MOUNT_ALREADY_MOUNTED = 32
 # Paths we base everything on. Remember that these are CSI pod paths not node paths.
 CSI_ROOT = Path("/nix/var/nix-csi")
 CSI_VOLUMES = CSI_ROOT / "volumes"
-NIX_GCROOTS = Path("/nix/var/nix/gcroots/nix-csi")
+CSI_GCROOTS = Path("/nix/var/nix/gcroots/nix-csi")
 NAMESPACE = os.environ["KUBE_NAMESPACE"]
 
 RSYNC_CONCURRENCY = Semaphore(1)
@@ -77,7 +76,7 @@ def reboot_cleanup():
 
     if needs_cleanup:
         logger.info("Reboot detected - cleaning volumes and gcroots")
-        for path in [CSI_VOLUMES, NIX_GCROOTS]:
+        for path in [CSI_VOLUMES, CSI_GCROOTS]:
             if path.exists():
                 shutil.rmtree(path)
                 path.mkdir(parents=True, exist_ok=True)
@@ -187,7 +186,7 @@ class NodeServicer(csi_grpc.NodeBase):
         expression = request.volume_context.get("expression")
         storePath = request.volume_context.get("storePath")
         packagePath: Path = Path("/nonexistent/path/that/should/never/exist")
-        gcPath = NIX_GCROOTS / request.volume_id
+        gcPath = CSI_GCROOTS / request.volume_id
 
         if storePath is not None:
             packagePathCacheResult = self.packagePathCache.get(storePath)
@@ -494,7 +493,7 @@ class NodeServicer(csi_grpc.NodeBase):
             if umount.returncode != 0:
                 errors.append(f"umount failed {umount.returncode=} {umount.stderr=}")
 
-        gcroot_path = NIX_GCROOTS / request.volume_id
+        gcroot_path = CSI_GCROOTS / request.volume_id
         if gcroot_path.exists():
             try:
                 gcroot_path.unlink()
@@ -590,7 +589,7 @@ async def serve():
     # Create directories we operate in
     CSI_ROOT.mkdir(parents=True, exist_ok=True)
     CSI_VOLUMES.mkdir(parents=True, exist_ok=True)
-    NIX_GCROOTS.mkdir(parents=True, exist_ok=True)
+    CSI_GCROOTS.mkdir(parents=True, exist_ok=True)
     await set_nix_path()
 
     sock_path = "/csi/csi.sock"
