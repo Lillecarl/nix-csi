@@ -53,6 +53,10 @@ in
                       mountPath = "/nix-volume";
                       name = "nix-store";
                     }
+                    {
+                      name = "nix-config";
+                      mountPath = "/etc/nix";
+                    }
                   ];
                   imagePullPolicy = "IfNotPresent";
                 }

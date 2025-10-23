@@ -74,6 +74,10 @@ in
                       name = "nix-cache";
                       mountPath = "/nix-volume";
                     }
+                    {
+                      name = "nix-config";
+                      mountPath = "/etc/nix";
+                    }
                   ];
                 }
               ];
