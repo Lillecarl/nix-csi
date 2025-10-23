@@ -163,7 +163,7 @@ in
         };
       };
 
-      Service.nix-cache = {
+      Service.nix-cache-ci = {
         spec = {
           selector.app = "nix-cache";
           ports = [
@@ -179,6 +179,19 @@ in
             }
           ];
           type = "ClusterIP";
+        };
+      };
+      Service.nix-cache-lb = {
+        spec = {
+          selector.app = "nix-cache";
+          ports = [
+            {
+              port = 22;
+              targetPort = 22;
+              name = "ssh";
+            }
+          ];
+          type = "LoadBalancer";
         };
       };
     };
