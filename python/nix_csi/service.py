@@ -6,6 +6,7 @@ import shutil
 import socket
 import tempfile
 import time
+import math
 
 from csi import csi_grpc, csi_pb2
 from google.protobuf.wrappers_pb2 import BoolValue
@@ -171,19 +172,16 @@ class NodeServicer(csi_grpc.NodeBase):
     # If you get evictions from cache size you are elite
     packagePathCache: TTLCache[str, Path] = TTLCache(1337, 60)
     pathInfoCache: TTLCache[Path, List[str]] = TTLCache(1337, 60)
+    copyPathsCache: TTLCache[str, None] = TTLCache(math.inf, 60)
     expressionLock: defaultdict[str, Semaphore] = defaultdict(Semaphore)
+    copyLock: defaultdict[str, Semaphore] = defaultdict(Semaphore)
 
     async def NodePublishVolume(self, stream):
         request: csi_pb2.NodePublishVolumeRequest | None = await stream.recv_message()
         if request is None:
             raise ValueError("NodePublishVolumeRequest is None")
 
-        logger.info("Received NodePublishVolume")
-
-        logger.info(f"{request.target_path=}")
-        logger.info(f"{request.volume_id=}")
-
-        # TODO: Only do this on startup?
+        # TODO: Only do this on startup-ish
         system = (await run_captured("nix", "eval", "--raw", "--impure", "--expr", "builtins.currentSystem")).stdout
 
         targetPath = Path(request.target_path)
@@ -457,58 +455,67 @@ class NodeServicer(csi_grpc.NodeBase):
         reply = csi_pb2.NodePublishVolumeResponse()
         await stream.send_message(reply)
 
-        async def copyToCache():
-            copyPaths = []
-            pathInfoDrv = await run_captured(
-                "nix",
-                "path-info",
-                "--recursive",
-                "--derivation",
-                packagePath,
-            )
-            if pathInfoDrv.returncode == 0:
-                copyPaths += pathInfoDrv.stdout.splitlines()
-
-            pathInfo = await run_captured(
-                "nix",
-                "path-info",
-                "--recursive",
-                packagePath,
-            )
-            if pathInfo.returncode == 0:
-                copyPaths += pathInfo.stdout.splitlines()
-
-            if pathInfoDrv.returncode != 0 and pathInfo.returncode != 0:
-                logger.error(
-                    "Unable to copy because path-info failed, shouldn't be possible"
+        async def copyToCache(packagePath: str):
+            # Only run one copy per path per time
+            async with self.copyLock[packagePath]:
+                paths = []
+                pathInfoDrv = await run_captured(
+                    "nix",
+                    "path-info",
+                    "--recursive",
+                    "--derivation",
+                    packagePath,
                 )
-                return
+                if pathInfoDrv.returncode == 0:
+                    paths += pathInfoDrv.stdout.splitlines()
 
-            # Filter away derivation files
-            paths = {p for p in copyPaths if not p.endswith(".drv")}
-            for _ in range(6):
-                nixCopy = await run_captured(
-                    "nix", "copy", "--to", "ssh://nix-cache", *paths
+                pathInfo = await run_captured(
+                    "nix",
+                    "path-info",
+                    "--recursive",
+                    packagePath,
                 )
-                if nixCopy.returncode == 0:
-                    logger.info(
-                        f"{len(paths)} paths copied to cache in {nixCopy.elapsed:.2f} seconds"
-                    )
-                    break
-                else:
+                if pathInfo.returncode == 0:
+                    paths += pathInfo.stdout.splitlines()
+
+                if pathInfoDrv.returncode != 0 and pathInfo.returncode != 0:
                     logger.error(
-                        f"nix copy failed: {nixCopy.returncode=}\n{nixCopy.combined=}"
+                        "Unable to copy because path-info failed, shouldn't be possible"
                     )
-                await asyncio.sleep(10)
+                    return
+
+                # Unique the paths since we're running path-info twice
+                paths = list(set(paths))
+                # Filter derivation files
+                paths = {p for p in paths if not p.endswith(".drv")}
+                # Filter paths that are in self.copyPathsCache
+                paths = {p for p in paths if p not in self.copyPathsCache}
+                if len(paths) > 0:
+                    for _ in range(6):
+                        nixCopy = await run_captured(
+                            "nix", "copy", "--to", "ssh://nix-cache", *paths
+                        )
+                        if nixCopy.returncode == 0:
+                            logger.info(
+                                f"{len(paths)} paths copied to cache in {nixCopy.elapsed:.2f} seconds"
+                            )
+                            for path in paths:
+                                self.copyPathsCache[path] = None
+                            break
+                        else:
+                            logger.error(
+                                f"nix copy failed: {nixCopy.returncode=}\n{nixCopy.combined=}"
+                            )
+                        await asyncio.sleep(10)
 
         if os.getenv("BUILD_CACHE") == "true":
-            asyncio.create_task(copyToCache())
+            asyncio.create_task(copyToCache(packagePath))
 
     async def NodeUnpublishVolume(self, stream):
         request: csi_pb2.NodeUnpublishVolumeRequest | None = await stream.recv_message()
         if request is None:
             raise ValueError("NodeUnpublishVolumeRequest is None")
-        log_request("NodeUnpublishVolume", request)
+        # log_request("NodeUnpublishVolume", request)
 
         errors = []
         targetPath = Path(request.target_path)
