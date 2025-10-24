@@ -22,6 +22,7 @@ let
         {
           boot.isContainer = true;
           boot.specialFileSystems = lib.mkForce { };
+          boot.nixStoreMountOpts = lib.mkForce [ ];
           services.journald.console = "/dev/stderr";
           networking.resolvconf.enable = false;
           environment.etc.hostname.enable = lib.mkForce false;
