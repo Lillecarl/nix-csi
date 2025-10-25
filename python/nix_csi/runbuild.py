@@ -8,6 +8,7 @@ from kr8s.asyncio.objects import Pod, Job, ConfigMap
 NAMESPACE = os.environ.get("KUBE_NAMESPACE", "default")
 KUBE_NODE_NAME = os.environ.get("KUBE_NODE_NAME", "shitbox")
 
+
 async def run(storePath: str, expression: str):
     jobName = f"build-{os.path.basename(storePath)[:32]}"
     job: Job | None = None
@@ -17,9 +18,10 @@ async def run(storePath: str, expression: str):
     except kr8s.NotFoundError:
         job = await Job(
             {
-                "metadata": {"name": jobName, "annotations": {
-                    "nix.csi/storePath": storePath
-                }},
+                "metadata": {
+                    "name": jobName,
+                    "annotations": {"nix.csi/storePath": storePath},
+                },
                 "spec": {
                     "ttlSecondsAfterFinished": 86400,
                     "template": {
@@ -140,7 +142,8 @@ async def run(storePath: str, expression: str):
                     "name": jobName,
                 },
                 "data": {"default.nix": expression},
-            }
+            },
+            NAMESPACE,
         )
         await cm.create()
         await cm.set_owner(job)

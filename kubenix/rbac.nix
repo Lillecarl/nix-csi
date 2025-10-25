@@ -4,7 +4,6 @@ let
 in
 {
   config = lib.mkIf cfg.enable {
-    kubernetes.resources.none.ClusterRoleBinding = { };
     kubernetes.resources.${cfg.namespace} = {
       ServiceAccount.nix-csi = { };
 
