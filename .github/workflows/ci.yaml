@@ -64,6 +64,10 @@ jobs:
       - name: Create Kind cluster
         uses: helm/kind-action@main
 
+      - name: Clean runner
+        run: |
+          sudo rm --recursive --force /home/runner/.cache
+
       - name: Deploy nix-csi
         run: |
           nix run --file . kubenixCI.deploymentScript -- --yes
