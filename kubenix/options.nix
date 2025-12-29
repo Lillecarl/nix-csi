@@ -82,38 +82,34 @@ in
   };
   config =
     let
-      # Watch this fall apart when we're adding more architectures
-      crossAttrs = {
-        "x86_64-linux" = "aarch64-linux";
-        "aarch64-linux" = "x86_64-linux";
-      };
-      system = pkgs.stdenv.hostPlatform.system;
-      systemCross = crossAttrs.${system};
+      x86 = "x86_64-linux";
+      arm = "aarch64-linux";
 
-      pkgs = import cfg.pkgs {
+      x86Pkgs = import cfg.pkgs {
+        system = x86;
         overlays = [ (import ../pkgs) ];
       };
-      pkgsCross = import cfg.pkgs {
-        system = systemCross;
+      armPkgs = import cfg.pkgs {
+        system = arm;
         overlays = [ (import ../pkgs) ];
       };
       cachePackage = {
-        ${system} = import ../environments/cache {
-          inherit pkgs;
+        ${x86} = import ../environments/cache {
+          pkgs = x86Pkgs;
           inherit (cfg) dinix;
         };
-        ${systemCross} = import ../environments/cache {
-          pkgs = pkgsCross;
+        ${arm} = import ../environments/cache {
+          pkgs = armPkgs;
           inherit (cfg) dinix;
         };
       };
       nodePackage = {
-        ${system} = import ../environments/node {
-          inherit pkgs;
+        ${x86} = import ../environments/node {
+          pkgs = x86Pkgs;
           inherit (cfg) dinix;
         };
-        ${systemCross} = import ../environments/node {
-          pkgs = pkgsCross;
+        ${arm} = import ../environments/node {
+          pkgs = armPkgs;
           inherit (cfg) dinix;
         };
       };
