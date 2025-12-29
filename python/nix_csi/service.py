@@ -77,6 +77,7 @@ class NodeServicer(csi_grpc.NodeBase):
 
             if storePath is not None:
                 async with self.volumeLocks[storePath]:
+                    logger.debug(f"{storePath=}")
                     packagePath = Path(storePath)
                     if not packagePath.exists():
                         logger.debug(f"{storePath=}")
@@ -105,6 +106,7 @@ class NodeServicer(csi_grpc.NodeBase):
                     packagePath = Path(result.stdout.splitlines()[0])
             elif nixExpr is not None:
                 async with self.volumeLocks[nixExpr]:
+                    logger.debug(f"{nixExpr=}")
                     with tempfile.NamedTemporaryFile(mode="w", suffix=".nix") as tmp:
                         tmp.write(nixExpr)
                         tmp.flush()
