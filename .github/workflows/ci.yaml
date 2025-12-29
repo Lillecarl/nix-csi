@@ -83,6 +83,16 @@ jobs:
         run: |
           kubectl wait --for=condition=complete --timeout=300s job/flake-hello job/expr-hello job/path-hello -n nix-csi
 
+      - name: Delete jobs and verify CSI cleanup
+        run: |
+          kubectl delete job flake-hello expr-hello path-hello -n nix-csi
+          kubectl wait --for=delete pod -l "job-name in (flake-hello,expr-hello,path-hello)" -n nix-csi --timeout=60s
+
+      - name: Print node logs
+        run: |
+          echo "=== Node pod logs ==="
+          kubectl logs -l app.kubernetes.io/name=csi -n nix-csi --tail -1
+
       - name: Debug on failure
         if: failure()
         run: |
