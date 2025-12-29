@@ -50,7 +50,7 @@ let
             logfile = "/var/log/ssh.log";
           };
           services.nix-daemon = {
-            command = "${lib.getExe pkgs.lix} daemon --store local";
+            command = "${lib.getExe pkgs.lixPackageSets.lix_2_93.lix} daemon --store local";
             depends-on = [ "shared-setup" ];
             log-type = "file";
             logfile = "/var/log/nix-daemon.log";
@@ -108,7 +108,7 @@ let
                       [
                         rsync
                         coreutils
-                        lix
+                        lixPackageSets.lix_2_93.lix
                       ]
                     )
                   }

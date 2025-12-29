@@ -86,8 +86,8 @@ let
                 checkConfig
                 extraOptions
                 ;
-              package = pkgs.lix.out;
-              inherit (pkgs.lix) version;
+              package = pkgs.lixPackageSets.lix_2_93.lix.out;
+              inherit (pkgs.lixPackageSets.lix_2_93.lix) version;
             }).generate
               "nix.conf"
               config.settings;

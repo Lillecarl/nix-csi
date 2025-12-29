@@ -82,7 +82,7 @@ pkgs.buildEnv {
   paths = [
     ctest
     pkgs.fishMinimal
-    pkgs.lix
+    pkgs.lixPackageSets.lix_2_93.lix
   ];
   meta.mainProgram = ctest.meta.mainProgram;
 }

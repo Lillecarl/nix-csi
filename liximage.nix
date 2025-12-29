@@ -37,7 +37,7 @@ rec {
               lib.makeBinPath [
                 pkgs.coreutils
                 pkgs.gitMinimal
-                pkgs.lix
+                pkgs.lixPackageSets.lix_2_93.lix
                 pkgs.rsync
                 pkgs.openssh
               ]
@@ -72,7 +72,7 @@ rec {
     in
     nix2container.buildImage {
       name = "${repo}/lix";
-      tag = "${pkgs.lix.version}-${pkgs.stdenv.hostPlatform.system}";
+      tag = "${pkgs.lixPackageSets.lix_2_93.lix.version}-${pkgs.stdenv.hostPlatform.system}";
       arch = pkgs.go.GOARCH;
       maxLayers = 127;
       initializeNixDatabase = true;
@@ -99,7 +99,7 @@ rec {
         regctl registry login -u="$REPO_USERNAME" -p="$REPO_TOKEN" ${server}
         ${copyToRegistry "aarch64-linux"}
         ${copyToRegistry "x86_64-linux"}
-        regctl index create ${repo}/lix:${pkgs.lix.version} \
+        regctl index create ${repo}/lix:${pkgs.lixPackageSets.lix_2_93.lix.version} \
           --ref ${imageRef "aarch64-linux"} \
           --ref ${imageRef "x86_64-linux"}
         regctl index create ${repo}/lix:latest \

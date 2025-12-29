@@ -46,7 +46,7 @@ in
                 initContainers = lib.mkNumberedList {
                   "1" = {
                     name = "initcopy";
-                    image = "ghcr.io/lillecarl/nix-csi/lix:${pkgs.lix.version}";
+                    image = "ghcr.io/lillecarl/nix-csi/lix:${pkgs.lixPackageSets.lix_2_93.lix.version}";
                     imagePullPolicy = "Always";
                     securityContext.privileged = true; # chroot store
                     env =
