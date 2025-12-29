@@ -43,9 +43,8 @@ jobs:
 
       - name: Build and push scratch image
         run: |
-          nix build --file default.nix uploadScratch --out-link nix-scratches
-          # uploadScratch requires sudo because buildah uses unshare syscall
-          sudo -E ./nix-scratches/bin/uploadScratch
+          nix build --file scratchimage.nix push --out-link nix-scratches
+          ./nix-scratches/bin/push
 
   # Test deployment on Kind cluster
   test-kind:
