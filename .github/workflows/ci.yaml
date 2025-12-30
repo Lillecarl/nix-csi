@@ -100,10 +100,10 @@ jobs:
           kubectl get all -A
 
           echo "=== Cache pod logs ==="
-          kubectl logs -l app.kubernetes.io/name=cache -n nix-csi || true
+          kubectl logs -l app.kubernetes.io/name=cache -n nix-csi --tail -1 || true
 
           echo "=== Node pod logs ==="
-          kubectl logs -l app.kubernetes.io/name=csi -n nix-csi --all-containers || true
+          kubectl logs -l app.kubernetes.io/name=csi -n nix-csi --tail -1 || true
 
           echo "=== Events ==="
           kubectl get events -n nix-csi --sort-by='.lastTimestamp'
