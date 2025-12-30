@@ -48,22 +48,6 @@
         "type": "github"
       }
     },
-    "nix2container": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1761716996,
-        "narHash": "sha256-vdOuy2pid2/DasUgb08lDOswdPJkN5qjXfBYItVy/R4=",
-        "owner": "nlewo",
-        "repo": "nix2container",
-        "rev": "e5496ab66e9de9e3f67dc06f692dfbc471b6316e",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nlewo",
-        "repo": "nix2container",
-        "type": "github"
-      }
-    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1766902085,
@@ -85,7 +69,6 @@
         "dinix": "dinix",
         "easykubenix": "easykubenix",
         "flake-compatish": "flake-compatish",
-        "nix2container": "nix2container",
         "nixpkgs": "nixpkgs"
       }
     }

@@ -16,14 +16,11 @@ let
     ];
   };
   inherit (pkgs) lib;
-  n2c = import inputs.nix2container { inherit pkgs; };
-  inherit (n2c) nix2container;
-  skopeo = n2c.skopeo-nix2container;
   server = "ghcr.io";
   repo = "${server}/lillecarl/nix-csi";
 in
 rec {
-  inherit inputs nix2container pkgs n2c;
+  inherit inputs pkgs;
   images = lib.genAttrs [ "aarch64-linux" "x86_64-linux" ] (
     system:
     let
@@ -70,13 +67,12 @@ rec {
                 ''${!ARCH}
           '';
     in
-    nix2container.buildImage {
+    pkgs.dockerTools.streamLayeredImage {
       name = "${repo}/lix";
       tag = "${pkgs.lixPackageSets.lix_2_93.lix.version}-${pkgs.stdenv.hostPlatform.system}";
-      arch = pkgs.go.GOARCH;
-      maxLayers = 127;
-      initializeNixDatabase = true;
-      copyToRoot = [
+      maxLayers = 125;
+      includeNixDB = true;
+      contents = [
         pkgs.dockerTools.binSh
         pkgs.dockerTools.caCertificates
         pkgs.dockerTools.usrBinEnv
@@ -88,13 +84,13 @@ rec {
   );
   push =
     let
-      copyToRegistry = arch: lib.getExe images.${arch}.copyToRegistry;
-      imageRef = arch: images.${arch}.imageRefUnsafe;
+      copyToRegistry = arch: "${images.${arch}} | gzip --fast | skopeo copy docker-archive:/dev/stdin docker://${imageRef arch}";
+      imageRef = arch: "${images.${arch}.imageName}:${images.${arch}.imageTag}";
     in
     pkgs.writeScriptBin "push" # bash
       ''
         #! ${pkgs.runtimeShell}
-        export PATH=${lib.makeBinPath [ pkgs.regctl skopeo ]}:$PATH
+        export PATH=${lib.makeBinPath [ pkgs.regctl pkgs.skopeo pkgs.gz-utils]}:$PATH
         skopeo login -u="$REPO_USERNAME" -p="$REPO_TOKEN" ${server}
         regctl registry login -u="$REPO_USERNAME" -p="$REPO_TOKEN" ${server}
         ${copyToRegistry "aarch64-linux"}
