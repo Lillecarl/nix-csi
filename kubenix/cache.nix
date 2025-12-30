@@ -2,7 +2,6 @@
   config,
   pkgs,
   lib,
-  nix-csi,
   ...
 }:
 let
@@ -39,7 +38,12 @@ in
               metadata.labels = labels;
               metadata.annotations = {
                 "kubectl.kubernetes.io/default-container" = "nix-cache";
-                configHash = lib.hashAttrs nsRes.ConfigMap.nix-cache-config;
+                configHash = lib.hashAttrs (
+                  { }
+                  // nsRes.ConfigMap.nix-cache-config or { }
+                  // nsRes.Secret.ssh-config or { }
+                  // nsRes.Secret.authorized-keys or { }
+                );
               };
               spec = {
                 serviceAccountName = "nix-csi";
@@ -93,7 +97,8 @@ in
                     };
                     volumeMounts = lib.mkNamedList {
                       nix-config.mountPath = "/etc/nix-mount";
-                      ssh.mountPath = "/etc/ssh-mount";
+                      ssh-config.mountPath = "/etc/ssh";
+                      authorized-keys.mountPath = "/etc/authorized_keys";
                       nix-store = {
                         mountPath = "/nix";
                         subPath = "nix";
@@ -103,10 +108,13 @@ in
                 };
                 volumes = lib.mkNamedList {
                   nix-config.configMap.name = "nix-cache-config";
-                  ssh.secret = {
-                    secretName = "ssh";
-                    defaultMode = 384;
-                    optional = true;
+                  ssh-config.secret = {
+                    secretName = "ssh-config";
+                    defaultMode = 256; # 400
+                  };
+                  authorized-keys.secret = {
+                    secretName = "authorized-keys";
+                    defaultMode = 438; # 666
                   };
                 };
               };

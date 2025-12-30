@@ -12,8 +12,6 @@ from grpclib.const import Status
 from grpclib.server import Server
 from importlib import metadata
 from pathlib import Path
-from typing import List
-from cachetools import TTLCache
 from asyncio import Semaphore, sleep
 from collections import defaultdict
 from .identityservicer import IdentityServicer

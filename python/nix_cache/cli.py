@@ -130,82 +130,8 @@ async def watch_nodes(update_event: asyncio.Event):
             await asyncio.sleep(15)
 
 
-async def reconcile_secrets(namespace: str, privKey: Path, pubKey: Path):
-    """Periodically ensures the SSH secret is up-to-date."""
-    while True:
-        try:
-            logging.info("Reconciling SSH secret...")
-            authorized_keys_cm = await kr8s.asyncio.objects.ConfigMap.get(
-                name="authorized-keys", namespace=namespace
-            )
-            keys = [pubKey.read_text().strip()] + str(
-                authorized_keys_cm.data.get("authorized_keys", "")
-            ).strip().splitlines()
-
-            stringData = {
-                "id_ed25519": privKey.read_text(),
-                "id_ed25519.pub": pubKey.read_text(),
-                "known_hosts": f"* {pubKey.read_text()}",
-                "config": textwrap.dedent("""
-                    Host *
-                        User nix
-                        IdentityFile ~/.ssh/id_ed25519
-                        UserKnownHostsFile ~/.ssh/known_hosts
-                """),
-                "authorized_keys": "\n".join(keys) + "\n",
-                "sshd_config": textwrap.dedent("""
-                    Port 22
-                    AddressFamily Any
-                    HostKey /etc/ssh/id_ed25519
-                    SyslogFacility DAEMON
-                    SetEnv PATH=/nix/var/result/bin
-                    SetEnv NIXPKGS_ALLOW_UNFREE=1
-                    PermitRootLogin no
-                    PubkeyAuthentication yes
-                    PasswordAuthentication no
-                    ChallengeResponseAuthentication no
-                    UsePAM no
-                    AuthorizedKeysFile %h/.ssh/authorized_keys
-                    StrictModes no
-                    Subsystem sftp internal-sftp
-                """),
-            }
-
-            secret_manifest = {
-                "apiVersion": "v1",
-                "kind": "Secret",
-                "metadata": {"name": "ssh", "namespace": namespace},
-                "stringData": stringData,
-                "type": "Opaque",
-            }
-            secret = await kr8s.asyncio.objects.Secret(secret_manifest)
-
-            if await secret.exists():
-                await secret.patch({"stringData": stringData})
-                logging.info("Patched existing SSH secret.")
-            else:
-                await secret.create()
-                logging.info("Created new SSH secret.")
-
-            await asyncio.sleep(60)
-
-        except asyncio.CancelledError:
-            logging.info("Secret reconciler task cancelled.")
-            break
-        except Exception:
-            logging.exception("Error reconciling secret. Retrying in 15 seconds...")
-            await asyncio.sleep(15)
-
-
 async def async_main():
     namespace = os.environ["KUBE_NAMESPACE"]
-
-    privKey = Path("/nix/var/nix-csi/root/privkey")
-    pubKey = privKey.with_suffix(".pub")
-    if not privKey.exists():
-        await run_captured(
-            "ssh-keygen", "-t", "ed25519", "-f", privKey, "-N", "", "-C", "nix-csi"
-        )
 
     # This event will be used to signal when an update is needed.
     update_needed_event = asyncio.Event()
@@ -217,7 +143,6 @@ async def async_main():
         asyncio.create_task(update_worker(update_needed_event, namespace)),
         asyncio.create_task(watch_pods(update_needed_event, namespace)),
         asyncio.create_task(watch_nodes(update_needed_event)),
-        asyncio.create_task(reconcile_secrets(namespace, privKey, pubKey)),
     ]
 
     await asyncio.gather(*tasks)

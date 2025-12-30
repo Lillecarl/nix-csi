@@ -10,5 +10,6 @@
     ./rbac.nix
     ./ctest.nix
     ./undeploy.nix
+    ./secret.nix
   ];
 }

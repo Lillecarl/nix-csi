@@ -35,23 +35,14 @@ let
           };
           services.openssh = {
             type = "process";
-            command =
-              pkgs.writeScriptBin "openssh-launcher" # bash
-                ''
-                  #! ${pkgs.runtimeShell}
-                  for i in $(seq 1 10); do
-                    test -f /etc/ssh/sshd_config && break
-                    sleep 1
-                  done
-                  exec ${lib.getExe' pkgs.openssh "sshd"} -D -f /etc/ssh/sshd_config -e
-                '';
-            depends-on = [ "shared-setup" ];
+            command = "${lib.getExe' pkgs.openssh "sshd"} -D -f /etc/ssh/sshd_config -e -d";
+            depends-on = [ "setup" ];
             log-type = "file";
             logfile = "/var/log/ssh.log";
           };
           services.nix-daemon = {
             command = "${lib.getExe pkgs.lixPackageSets.lix_2_93.lix} daemon --store local";
-            depends-on = [ "shared-setup" ];
+            depends-on = [ "setup" ];
             log-type = "file";
             logfile = "/var/log/nix-daemon.log";
           };
@@ -72,17 +63,6 @@ let
                   }
                   while true
                   do
-                    # Tricking OpenSSH's security policies like a pro!
-                    #
-                    # Exclude authorized_keys from root, we don't want anyone
-                    # logging in as root in our containers.
-                    rsync --archive --mkpath --copy-links --chmod=D700,F600 --exclude='authorized_keys' /etc/ssh-mount/ $HOME/.ssh/
-                    # Here authorized_keys don't matter since we only check %h
-                    # for authorized_keys in sshd config
-                    rsync --archive --mkpath --copy-links --chmod=D700,F600 --chown=root:root /etc/ssh-mount/ /etc/ssh/
-                    # Everyone should log in as Nix to build or substitute
-                    rsync --archive --mkpath --copy-links --chmod=D700,F600 --chown=nix:nix /etc/ssh-mount/ /home/nix/.ssh/
-
                     # Copy mounted Nix config to nix config dir
                     # (Need RW /etc/nix for writing machines file)
                     rsync --archive --mkpath --copy-links --chmod=D755,F644 --chown=root:root /etc/nix-mount/ /etc/nix/
@@ -91,13 +71,13 @@ let
                   done
                 '';
           };
-          services.shared-setup = {
+          services.setup = {
             type = "scripted";
             log-type = "file";
-            logfile = "/var/log/shared-setup.log";
+            logfile = "/var/log/setup.log";
             depends-on = [ "config-reconciler" ];
             command =
-              pkgs.writeScriptBin "shared-setup" # bash
+              pkgs.writeScriptBin "setup" # bash
                 ''
                   #! ${pkgs.runtimeShell}
                   set -euo pipefail
@@ -119,9 +99,6 @@ let
                   rsync --archive ${pkgs.dockerTools.binSh}/ /
                   rsync --archive ${pkgs.dockerTools.caCertificates}/ /
                   rsync --archive ${pkgs.dockerTools.usrBinEnv}/ /
-                  rsync --archive --mkpath --copy-links --chmod=D700,F600 --exclude='authorized_keys' /etc/ssh-mount/ $HOME/.ssh/
-                  rsync --archive --mkpath --copy-links --chmod=D700,F600 --chown=root:root /etc/ssh-mount/ /etc/ssh/
-                  rsync --archive --mkpath --copy-links --chmod=D700,F600 --chown=nix:nix /etc/ssh-mount/ /home/nix/.ssh/
                   # Fix gcroots for /nix/var/result. The one created by initCopy
                   # points to invalid symlinks in the chain
                   # (auto -> /nix-volume/var/result) rather than
@@ -145,6 +122,9 @@ let
               "cache-daemon"
               "cache-logger"
               "cache-gc"
+              # "openssh"
+            ];
+            depends-ms = [
               "openssh"
             ];
           };
@@ -152,17 +132,14 @@ let
             command = "${lib.getExe pkgs.nix-cache} --loglevel DEBUG";
             log-type = "file";
             logfile = "/var/log/cache-daemon.log";
-            depends-on = [ "shared-setup" ];
+            depends-on = [ "setup" ];
             depends-ms = [ "nix-daemon" ];
           };
           services.cache-logger = {
-            command = "${lib.getExe' pkgs.coreutils "tail"} --follow /var/log/cache-daemon.log /var/log/dinit.log";
+            command = "${lib.getExe' pkgs.coreutils "tail"} --follow /var/log/cache-daemon.log /var/log/dinit.log /var/log/ssh.log";
             options = [ "shares-console" ];
             depends-on = [ "cache-daemon" ];
           };
-          # Make OpenSSH depend on cache-daemon so it can create the secret that'll
-          # be mounted into /etc/ssh-mount when it's crashed once.
-          # services.openssh.waits-for = [ "cache-daemon" ];
           services.cache-gc = {
             type = "scripted";
             command =
@@ -178,7 +155,7 @@ let
             logfile = "/var/log/cache-gc.log";
             depends-on = [
               "nix-daemon"
-              "shared-setup"
+              "setup"
             ];
           };
         };

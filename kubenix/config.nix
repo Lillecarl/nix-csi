@@ -107,22 +107,21 @@ in
     nix-csi =
       let
         sharedSettings = {
-          store = "daemon";
           allowed-users = [ "*" ];
           trusted-users = [
             "root"
             "nix"
           ];
-          auto-allocate-uids = true;
           experimental-features = [
             "nix-command"
             "flakes"
             "auto-allocate-uids"
           ];
+          auto-allocate-uids = true;
           builders-use-substitutes = true;
-          warn-dirty = false;
           narinfo-cache-negative-ttl = 0;
           narinfo-cache-positive-ttl = 0;
+          warn-dirty = false;
         };
       in
       {

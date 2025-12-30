@@ -17,6 +17,16 @@ let
       in
       flake-compatish ../.
     ).inputs;
+
+  keyDrv =
+    pkgs.runCommand "nix-csi-ssh-keys"
+      {
+        nativeBuildInputs = [ pkgs.openssh ];
+      }
+      ''
+        mkdir -p $out
+        ssh-keygen -t ed25519 -N "" -f $out/id_ed25519 -C "nix-csi-fallback-insecure"
+      '';
 in
 {
   options.nix-csi = {
@@ -34,6 +44,16 @@ in
       description = "SSH public keys that can connect to cache and builders";
       type = lib.types.listOf lib.types.str;
       default = [ ];
+    };
+    pubKey = lib.mkOption {
+      description = "Public SSH key used for in-cluster SSH communication";
+      type = lib.types.str;
+      default = builtins.readFile "${keyDrv}/id_ed25519.pub";
+    };
+    privKey = lib.mkOption {
+      description = "Private SSH key used for in-cluster SSH communication";
+      type = lib.types.str;
+      default = builtins.readFile "${keyDrv}/id_ed25519";
     };
     version = lib.mkOption {
       type = lib.types.str;
@@ -117,5 +137,6 @@ in
     lib.mkIf cfg.enable {
       nix-csi.cachePackage = cachePackage;
       nix-csi.nodePackage = nodePackage;
+      nix-csi.authorizedKeys = [ cfg.pubKey ];
     };
 }
