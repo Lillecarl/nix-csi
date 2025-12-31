@@ -100,7 +100,7 @@ in
                   };
                   authorized-keys.secret = {
                     secretName = "authorized-keys";
-                    defaultMode = 438; # 666
+                    defaultMode = 292; # 444
                   };
                   init-store.csi = {
                     driver = "nix.csi.store";

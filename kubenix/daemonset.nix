@@ -153,7 +153,7 @@ in
                   };
                   authorized-keys.secret = {
                     secretName = "authorized-keys";
-                    defaultMode = 438; # 666
+                    defaultMode = 292; # 444
                   };
                 };
               };
