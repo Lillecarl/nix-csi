@@ -90,7 +90,7 @@ jobs:
       - name: Print node logs
         run: |
           echo "=== Node pod logs ==="
-          kubectl logs -l app.kubernetes.io/name=csi -n nix-csi --tail -1
+          kubectl logs -l app.kubernetes.io/name=csi -n nix-csi --all-containers --tail -1
 
       - name: Debug on failure
         if: failure()
@@ -99,10 +99,10 @@ jobs:
           kubectl get all -A
 
           echo "=== Cache pod logs ==="
-          kubectl logs -l app.kubernetes.io/name=cache -n nix-csi --tail -1 || true
+          kubectl logs -l app.kubernetes.io/name=cache -n nix-csi --all-containers --tail -1 || true
 
           echo "=== Node pod logs ==="
-          kubectl logs -l app.kubernetes.io/name=csi -n nix-csi --tail -1 || true
+          kubectl logs -l app.kubernetes.io/name=csi -n nix-csi --all-containers --tail -1 || true
 
           echo "=== Events ==="
           kubectl get events -n nix-csi --sort-by='.lastTimestamp'
@@ -147,7 +147,7 @@ jobs:
       - name: Print node logs
         run: |
           echo "=== Node pod logs ==="
-          kubectl logs -l app.kubernetes.io/name=csi -n nix-csi --tail -1
+          kubectl logs -l app.kubernetes.io/name=csi -n nix-csi --all-containers --tail -1
 
       - name: Debug on failure
         if: failure()
@@ -156,10 +156,10 @@ jobs:
           kubectl get all -A
 
           echo "=== Cache pod logs ==="
-          kubectl logs -l app.kubernetes.io/name=cache -n nix-csi --tail -1 || true
+          kubectl logs -l app.kubernetes.io/name=cache -n nix-csi --all-containers --tail -1 || true
 
           echo "=== Node pod logs ==="
-          kubectl logs -l app.kubernetes.io/name=csi -n nix-csi --tail -1 || true
+          kubectl logs -l app.kubernetes.io/name=csi -n nix-csi --all-containers --tail -1 || true
 
           echo "=== Events ==="
           kubectl get events -n nix-csi --sort-by='.lastTimestamp'

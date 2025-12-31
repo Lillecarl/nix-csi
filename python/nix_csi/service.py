@@ -90,9 +90,6 @@ class NodeServicer(csi_grpc.NodeBase):
                     logger.debug(f"{storePath=}")
                     packagePath = Path(storePath)
                     if not packagePath.exists():
-                        logger.debug(f"{storePath=}")
-
-                        # Fetch storePath from caches
                         await try_console(
                             "nix",
                             "build",

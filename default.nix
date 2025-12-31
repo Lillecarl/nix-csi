@@ -26,7 +26,8 @@ rec {
 
   kubenixApply = kubenixInstance { };
   kubenixCI1 = kubenixInstance {
-    module.imports = [ ./kubenix/ci
+    module.imports = [
+      ./kubenix/ci
       {
         nix-csi.cache.enable = true;
       }
