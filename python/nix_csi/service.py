@@ -52,7 +52,6 @@ def initialize():
 
 
 class NodeServicer(csi_grpc.NodeBase):
-    # Cache positive Nix commands
     volumeLocks: defaultdict[str, Semaphore] = defaultdict(Semaphore)
 
     def __init__(self, system: str):
@@ -75,11 +74,14 @@ class NodeServicer(csi_grpc.NodeBase):
             gcPath = CSI_GCROOTS / request.volume_id
 
             try:
-                await try_console("ssh", "nix@nix-cache", "--", "true")
-                extraArgs = [
-                    "--extra-substituters",
-                    "ssh-ng://nix@nix-cache?trusted=1&priority=20",
-                ]
+                if os.environ.get("CACHE_ENABLED", "false") == "true":
+                    await try_console("ssh", "nix@nix-cache", "--", "true")
+                    extraArgs = [
+                        "--extra-substituters",
+                        "ssh-ng://nix@nix-cache?trusted=1&priority=20",
+                    ]
+                else:
+                    extraArgs = []
             except Exception:
                 extraArgs = []
 

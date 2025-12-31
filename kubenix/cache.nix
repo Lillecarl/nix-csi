@@ -10,6 +10,7 @@ let
 in
 {
   options.nix-csi.cache = {
+    enable = lib.mkEnableOption "cache";
     storageClassName = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
@@ -26,7 +27,7 @@ in
         "app.kubernetes.io/part-of" = "nix-csi";
       };
     in
-    lib.mkIf cfg.enable {
+    lib.mkIf (cfg.enable && cfg.cache.enable) {
       kubernetes.resources.${cfg.namespace} = {
         ConfigMap.authorized-keys.data.authorized_keys = lib.concatLines cfg.authorizedKeys;
         StatefulSet.nix-cache = {

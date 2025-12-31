@@ -47,7 +47,7 @@ in
                     securityContext.privileged = true; # chroot store
                     env =
                       lib.mkNamedList {
-                        TAG.value = cfg.version;
+                        CACHE_ENABLED.value = lib.boolToString cfg.cache.enable;
                         amd64.value =
                           if cfg.push then
                             config.nix-csi.nodePackage.x86_64-linux
