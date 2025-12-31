@@ -24,8 +24,20 @@ rec {
 
   easykubenix = import inputs.easykubenix;
   kubenixApply = kubenixInstance { };
-  kubenixCI = kubenixInstance {
-    module.imports = [ ./kubenix/ci ];
+  kubenixCI1 = kubenixInstance {
+    module.imports = [ ./kubenix/ci
+      {
+        nix-csi.cache.enable = true;
+      }
+    ];
+  };
+  kubenixCI2 = kubenixInstance {
+    module.imports = [
+      ./kubenix/ci
+      {
+        nix-csi.cache.enable = false;
+      }
+    ];
   };
   kubenixPush = kubenixInstance {
     module.config = {

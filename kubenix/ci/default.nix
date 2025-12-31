@@ -20,8 +20,6 @@ let
 in
 {
   config = {
-    nix-csi.cache.enable = true;
-
     kubernetes.resources.${cfg.namespace} = {
       Job.flake-hello = {
         spec = {

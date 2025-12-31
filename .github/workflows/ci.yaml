@@ -46,8 +46,7 @@ jobs:
           nix build --file scratchimage.nix push --out-link nix-scratches
           ./nix-scratches/bin/push
 
-  # Test deployment on Kind cluster
-  test-kind:
+  test-kind-cache:
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -69,7 +68,7 @@ jobs:
 
       - name: Deploy nix-csi
         run: |
-          nix run --file . kubenixCI.deploymentScript -- --yes
+          nix run --file . kubenixCI1.deploymentScript -- --yes
 
       - name: Wait for nix-csi node daemonset
         run: |
@@ -78,6 +77,63 @@ jobs:
       - name: Wait for nix-csi cache pod
         run: |
           kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=cache -n nix-csi --timeout=60s
+
+      - name: Wait for test workload
+        run: |
+          kubectl wait --for=condition=complete --timeout=300s job/flake-hello job/expr-hello job/path-hello -n nix-csi
+
+      - name: Delete jobs and verify CSI cleanup
+        run: |
+          kubectl delete job flake-hello expr-hello path-hello -n nix-csi
+          kubectl wait --for=delete pod -l "job-name in (flake-hello,expr-hello,path-hello)" -n nix-csi --timeout=60s
+
+      - name: Print node logs
+        run: |
+          echo "=== Node pod logs ==="
+          kubectl logs -l app.kubernetes.io/name=csi -n nix-csi --tail -1
+
+      - name: Debug on failure
+        if: failure()
+        run: |
+          echo "=== Cluster state ==="
+          kubectl get all -A
+
+          echo "=== Cache pod logs ==="
+          kubectl logs -l app.kubernetes.io/name=cache -n nix-csi --tail -1 || true
+
+          echo "=== Node pod logs ==="
+          kubectl logs -l app.kubernetes.io/name=csi -n nix-csi --tail -1 || true
+
+          echo "=== Events ==="
+          kubectl get events -n nix-csi --sort-by='.lastTimestamp'
+
+  test-kind-nocache:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@main
+
+      - name: Setup Nix environment
+        uses: ./.github/actions/setup-nix
+        with:
+          nixbuild_key: ${{ secrets.NIXBUILD_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Kind cluster
+        uses: helm/kind-action@main
+
+      - name: Clean runner
+        run: |
+          sudo rm --recursive --force /home/runner/.cache
+
+      - name: Deploy nix-csi
+        run: |
+          nix run --file . kubenixCI2.deploymentScript -- --yes
+
+      - name: Wait for nix-csi node daemonset
+        run: |
+          kubectl rollout status daemonset/nix-node -n nix-csi --timeout=60s
 
       - name: Wait for test workload
         run: |
