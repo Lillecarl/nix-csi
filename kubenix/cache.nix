@@ -40,7 +40,7 @@ in
                 "kubectl.kubernetes.io/default-container" = "nix-cache";
                 configHash = lib.hashAttrs (
                   { }
-                  // nsRes.ConfigMap.nix-cache-config or { }
+                  // nsRes.ConfigMap.nix-cache or { }
                   // nsRes.Secret.ssh-config or { }
                   // nsRes.Secret.authorized-keys or { }
                 );
@@ -107,7 +107,7 @@ in
                   };
                 };
                 volumes = lib.mkNamedList {
-                  nix-config.configMap.name = "nix-cache-config";
+                  nix-config.configMap.name = "nix-cache";
                   ssh-config.secret = {
                     secretName = "ssh-config";
                     defaultMode = 256; # 400

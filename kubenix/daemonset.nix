@@ -31,7 +31,7 @@ in
                 "kubectl.kubernetes.io/default-container" = "nix-node";
                 configHash = lib.hashAttrs (
                   { }
-                  // nsRes.ConfigMap.nix-cache-config or { }
+                  // nsRes.ConfigMap.nix-node or { }
                   // nsRes.Secret.ssh-config or { }
                   // nsRes.Secret.authorized-keys or { }
                 );
@@ -133,7 +133,7 @@ in
                   };
                 };
                 volumes = lib.mkNamedList {
-                  nix-config.configMap.name = "nix-csi-config";
+                  nix-config.configMap.name = "nix-node";
                   registration.hostPath.path = "/var/lib/kubelet/plugins_registry";
                   nix-store.hostPath = {
                     path = cfg.hostMountPath;
