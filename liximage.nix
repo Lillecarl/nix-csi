@@ -87,7 +87,7 @@ rec {
       copyToRegistry =
         arch:
         "${images.${arch}} | gzip --fast | skopeo copy docker-archive:/dev/stdin docker://${imageRef arch}";
-      imageRef = arch: "${images.${arch}.imageName}:${images.${arch}.imageTag}";
+      imageRef = arch: "${images.${arch}.imageName}:${images.${arch}.imageTag}"; # AI: imageName and imageTag exists
     in
     pkgs.writeScriptBin "push" # bash
       ''

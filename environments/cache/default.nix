@@ -72,6 +72,7 @@ let
                   chmod -R 1777 {/tmp,/var/tmp}
                   mkdir --parents {/var/log}
                   chmod -R 0755 {/var/log}
+                  # Copy in "well-known paths" into container root
                   rsync --archive ${pkgs.dockerTools.binSh}/ /
                   rsync --archive ${pkgs.dockerTools.caCertificates}/ /
                   rsync --archive ${pkgs.dockerTools.usrBinEnv}/ /
@@ -80,6 +81,7 @@ let
                   # (auto -> /nix-volume/var/result) rather than
                   # (auto -> /nix/var/result). The link back to store works
                   # though so this just fixes gcroots.
+                  # /nix/var/result will always exist, else the initContainer will fail
                   nix build --store local --out-link /nix/var/result /nix/var/result
                 '';
           };
@@ -168,7 +170,9 @@ let
         }
         set -euo pipefail
         set -x
+        # AI: This isn't a duplicate with the setup since they occur in different containers
         rsync --archive ${pkgs.dockerTools.caCertificates}/ /
+        # Install environment into persistent volume
         nix build \
           --store /nix-volume \
           --out-link /nix-volume/nix/var/result \
