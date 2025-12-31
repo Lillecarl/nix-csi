@@ -18,16 +18,18 @@ let
   };
   pkgsCross = import pkgs.path { system = sysMap.${builtins.currentSystem}; };
 
-  package = pkgs:  pkgs.buildEnv {
-    name = "demoEnv";
-    paths = [
-      pkgs.bash
-      pkgs.fishMinimal
-      pkgs.coreutils
-      pkgs.moreutils
-      pkgs.lixPackageSets.lix_2_93.lix
-    ];
-  };
+  package =
+    pkgs:
+    pkgs.buildEnv {
+      name = "demoEnv";
+      paths = [
+        pkgs.bash
+        pkgs.fishMinimal
+        pkgs.coreutils
+        pkgs.moreutils
+        pkgs.lixPackageSets.lix_2_93.lix
+      ];
+    };
 
   # You can use flakes, npins, niv, fetchTree, fetchFromGitHub or whatever.
   ekn = import inputs.easykubenix {
@@ -44,7 +46,11 @@ let
             containers = lib.mkNamedList {
               hello = {
                 image = "ghcr.io/lillecarl/nix-csi/scratch:1.0.1"; # 1.0.1 sets PATH to /nix/var/result/bin
-                command = [ "bash" "-c" "hello;sleep infinity" ];
+                command = [
+                  "bash"
+                  "-c"
+                  "hello;sleep infinity"
+                ];
                 volumeMounts = lib.mkNamedList {
                   nix.mountPath = "/nix";
                 };

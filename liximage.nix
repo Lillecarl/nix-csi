@@ -84,7 +84,9 @@ rec {
   );
   push =
     let
-      copyToRegistry = arch: "${images.${arch}} | gzip --fast | skopeo copy docker-archive:/dev/stdin docker://${imageRef arch}";
+      copyToRegistry =
+        arch:
+        "${images.${arch}} | gzip --fast | skopeo copy docker-archive:/dev/stdin docker://${imageRef arch}";
       imageRef = arch: "${images.${arch}.imageName}:${images.${arch}.imageTag}";
     in
     pkgs.writeScriptBin "push" # bash
