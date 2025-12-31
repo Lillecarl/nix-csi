@@ -64,6 +64,7 @@ jobs:
 
       - name: Clean runner
         run: |
+          # Remove cache because permissions can get fucked up preventing kluctl from creating it's cache directory
           sudo rm --recursive --force /home/runner/.cache
 
       - name: Deploy nix-csi
