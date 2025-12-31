@@ -107,12 +107,12 @@ in
                     volumeAttributes = {
                       x86_64-linux =
                         if cfg.push then
-                          config.nix-csi.cachePackage.x86_64-linux
+                          cfg.cachePackage.x86_64-linux
                         else
                           builtins.unsafeDiscardStringContext cfg.cachePackage.x86_64-linux;
                       aarch64-linux =
                         if cfg.push then
-                          config.nix-csi.cachePackage.aarch64-linux
+                          cfg.cachePackage.aarch64-linux
                         else
                           builtins.unsafeDiscardStringContext cfg.cachePackage.aarch64-linux;
                     };

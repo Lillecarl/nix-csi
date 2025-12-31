@@ -50,12 +50,12 @@ in
                         CACHE_ENABLED.value = lib.boolToString cfg.cache.enable;
                         amd64.value =
                           if cfg.push then
-                            config.nix-csi.nodePackage.x86_64-linux
+                            cfg.nodePackage.x86_64-linux
                           else
                             builtins.unsafeDiscardStringContext cfg.nodePackage.x86_64-linux;
                         arm64.value =
                           if cfg.push then
-                            config.nix-csi.nodePackage.aarch64-linux
+                            cfg.nodePackage.aarch64-linux
                           else
                             builtins.unsafeDiscardStringContext cfg.nodePackage.aarch64-linux;
                       }
