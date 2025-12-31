@@ -35,7 +35,7 @@ let
           };
           services.openssh = {
             type = "process";
-            command = "${lib.getExe' pkgs.openssh "sshd"} -D -f /etc/ssh/sshd_config -e -d";
+            command = "${lib.getExe' pkgs.openssh "sshd"} -D -f /etc/ssh/sshd_config -e";
             depends-on = [ "setup" ];
             log-type = "file";
             logfile = "/var/log/ssh.log";
