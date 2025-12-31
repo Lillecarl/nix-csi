@@ -34,7 +34,7 @@ in
           PermitRootLogin no
           PubkeyAuthentication yes
           PasswordAuthentication no
-          ChallengeResponseAuthentication no
+          KbdInteractiveAuthentication no
           UsePAM no
           AuthorizedKeysFile /dev/null
           StrictModes no
