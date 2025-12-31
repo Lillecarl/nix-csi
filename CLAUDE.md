@@ -24,7 +24,7 @@ nix-csi is a Kubernetes CSI (Container Storage Interface) driver that mounts `/n
 The project uses Nix with flake-compatish for backwards compatibility. Key build outputs are defined in `default.nix`:
 
 - **Environments** (`environments/`): Separate Nix environments for cache and node, built using dinix (a service manager). Each environment:
-  - Shares common services (openssh, nix-daemon, config-reconciler, shared-setup)
+  - Shares common services (openssh, nix-daemon, shared-setup)
   - Has role-specific services defined in separate modules
   - Builds for both x86_64-linux and aarch64-linux architectures
   - Is deployed as a minimal container with services managed by dinit
@@ -37,7 +37,7 @@ The project uses Nix with flake-compatish for backwards compatibility. Key build
 
 ### Communication Flow
 
-**Cache → Nodes**: The cache service watches for pods labeled `app=nix-csi-node` and updates `/etc/nix/machines` with builder DNS names (`pod.name.nix-builders.namespace.svc.cluster.local`). This enables distributed builds.
+**Cache → Nodes**: The cache service watches for pods labeled `app=nix-csi-node` and updates `/etc/machines` with builder DNS names (`pod.name.nix-builders.namespace.svc.cluster.local`). This enables distributed builds.
 
 **Nodes → Cache**: Node pods use the cache as a binary substitute via `ssh-ng://nix@nix-cache?trusted=1` configured in `kubenix/config.nix`.
 

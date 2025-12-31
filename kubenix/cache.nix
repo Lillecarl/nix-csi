@@ -96,7 +96,7 @@ in
                       http.containerPort = 80;
                     };
                     volumeMounts = lib.mkNamedList {
-                      nix-config.mountPath = "/etc/nix-mount";
+                      nix-config.mountPath = "/etc/nix";
                       ssh-config.mountPath = "/etc/ssh";
                       authorized-keys.mountPath = "/etc/authorized_keys";
                       nix-store = {

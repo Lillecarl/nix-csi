@@ -46,36 +46,10 @@ let
             log-type = "file";
             logfile = "/var/log/nix-daemon.log";
           };
-          services.config-reconciler = {
-            type = "process";
-            log-type = "file";
-            logfile = "/var/log/config-reconciler.log";
-            command =
-              pkgs.writeScriptBin "config-reconciler" # bash
-                ''
-                  #! ${pkgs.runtimeShell}
-                  set -euo pipefail
-                  export PATH=${
-                    lib.makeBinPath [
-                      pkgs.rsync
-                      pkgs.coreutils
-                    ]
-                  }
-                  while true
-                  do
-                    # Copy mounted Nix config to nix config dir
-                    # (Need RW /etc/nix for writing machines file)
-                    rsync --archive --mkpath --copy-links --chmod=D755,F644 --chown=root:root /etc/nix-mount/ /etc/nix/
-                    # 60s reconciliation is good enough(TM)
-                    sleep 60
-                  done
-                '';
-          };
           services.setup = {
             type = "scripted";
             log-type = "file";
             logfile = "/var/log/setup.log";
-            depends-on = [ "config-reconciler" ];
             command =
               pkgs.writeScriptBin "setup" # bash
                 ''

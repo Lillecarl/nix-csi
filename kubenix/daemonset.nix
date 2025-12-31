@@ -92,7 +92,7 @@ in
                       };
                     volumeMounts = lib.mkNamedList {
                       csi-socket.mountPath = "/csi";
-                      nix-config.mountPath = "/etc/nix-mount";
+                      nix-config.mountPath = "/etc/nix";
                       registration.mountPath = "/registration";
                       ssh-config.mountPath = "/etc/ssh";
                       authorized-keys.mountPath = "/etc/authoried_keys";

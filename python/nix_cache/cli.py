@@ -53,7 +53,7 @@ async def update_machines(namespace: str):
                     f"ssh-ng://{pod.metadata['name']}.{os.environ['BUILDERS_SERVICE_NAME']}?trusted=1 {nix_arch}"
                 )
 
-        machines_path = Path("/etc/nix/machines")
+        machines_path = Path("/etc/machines")
         temp_path = machines_path.with_suffix(".tmp")
         content = "".join(f"{builder}\n" for builder in builders)
         temp_path.write_text(content)

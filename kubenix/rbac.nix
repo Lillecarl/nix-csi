@@ -9,7 +9,7 @@ in
 
       ClusterRole.nix-csi = {
         rules = [
-          # Cache maintains up2date /etc/nix/machines
+          # Cache maintains up2date /etc/machines
           {
             apiGroups = [ "" ];
             resources = [
