@@ -20,22 +20,16 @@ self: pkgs: {
     inherit (self) csi-proto-python kr8s;
   };
 
-  lixPackageSets = pkgs.lixPackageSets // {
-    lix_2_93 = pkgs.lixPackageSets.lix_2_93.overrideScope (
-      setSelf: set: {
-        lix = set.lix.overrideAttrs (oldAttrs: {
-          patches = (oldAttrs.patches or [ ]) ++ [
-            (pkgs.fetchpatch {
-              url = "https://github.com/Lillecarl/lix/commit/9ac72bbd0c7802ca83a907d1fec135f31aab6d24.patch";
-              hash = "sha256-NLyURqjzbyftbjxwOGWW26jcLRtvvE0hdIriiYEnQ4Q=";
-            })
-          ];
-          doCheck = false;
-          doInstallCheck = false;
-        });
-      }
-    );
-  };
+  lruLix = pkgs.lixPackageSets.lix_2_93.lix.overrideAttrs (oldAttrs: {
+    patches = (oldAttrs.patches or [ ]) ++ [
+      (pkgs.fetchpatch {
+        url = "https://github.com/Lillecarl/lix/commit/9ac72bbd0c7802ca83a907d1fec135f31aab6d24.patch";
+        hash = "sha256-NLyURqjzbyftbjxwOGWW26jcLRtvvE0hdIriiYEnQ4Q=";
+      })
+    ];
+    doCheck = false;
+    doInstallCheck = false;
+  });
 
   csi-proto-python = pkgs.python3Packages.callPackage ./csi-proto-python { };
   python-jsonpath = pkgs.python3Packages.callPackage ./python-jsonpath.nix { };

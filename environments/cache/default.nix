@@ -41,7 +41,7 @@ let
             logfile = "/var/log/ssh.log";
           };
           services.nix-daemon = {
-            command = "${lib.getExe pkgs.lixPackageSets.lix_2_93.lix} daemon --store local";
+            command = "${lib.getExe pkgs.lruLix} daemon --store local";
             depends-on = [ "setup" ];
             log-type = "file";
             logfile = "/var/log/nix-daemon.log";
@@ -62,7 +62,7 @@ let
                       [
                         rsync
                         coreutils
-                        lix
+                        lruLix
                       ]
                     )
                   }
@@ -144,7 +144,7 @@ let
       bash # Used for build and upload scripts
       coreutils
       fishMinimal
-      lix
+      lruLix
       openssh
       util-linuxMinimal
       gnugrep
@@ -163,7 +163,7 @@ let
         #! ${pkgs.runtimeShell}
         export PATH=${
           lib.makeBinPath [
-            pkgs.lixPackageSets.lix_2_93.lix
+            pkgs.lruLix
             pkgs.rsync
           ]
         }
