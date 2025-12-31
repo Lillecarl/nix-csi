@@ -63,7 +63,7 @@ in
                   };
                 };
                 containers = lib.mkNamedList {
-                  cache = {
+                  nix-cache = {
                     command = [
                       "dinit"
                       "--log-file"
