@@ -96,9 +96,6 @@ let
               "cache-daemon"
               "cache-logger"
               "cache-gc"
-              # "openssh"
-            ];
-            depends-ms = [
               "openssh"
             ];
           };

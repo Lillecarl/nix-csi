@@ -95,9 +95,6 @@ let
             depends-on = [
               "csi-daemon"
               "csi-logger"
-              # "openssh"
-            ];
-            depends-ms = [
               "openssh"
             ];
           };
