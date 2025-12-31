@@ -23,6 +23,7 @@ rec {
   lib = pkgs.lib;
 
   easykubenix = import inputs.easykubenix;
+
   kubenixApply = kubenixInstance { };
   kubenixCI1 = kubenixInstance {
     module.imports = [ ./kubenix/ci
@@ -41,6 +42,7 @@ rec {
   };
   kubenixPush = kubenixInstance {
     module.config = {
+      nix-csi.cache.enable = true;
       nix-csi.push = true;
     };
   };
