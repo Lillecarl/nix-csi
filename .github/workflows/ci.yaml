@@ -71,13 +71,13 @@ jobs:
         run: |
           nix run --file . kubenixCI.deploymentScript -- --yes
 
-      - name: Wait for nix-csi cache pod
-        run: |
-          kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=cache -n nix-csi --timeout=60s
-
       - name: Wait for nix-csi node daemonset
         run: |
           kubectl rollout status daemonset/nix-node -n nix-csi --timeout=60s
+
+      - name: Wait for nix-csi cache pod
+        run: |
+          kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=cache -n nix-csi --timeout=60s
 
       - name: Wait for test workload
         run: |
