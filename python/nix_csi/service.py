@@ -75,14 +75,17 @@ class NodeServicer(csi_grpc.NodeBase):
 
             try:
                 if os.environ.get("CACHE_ENABLED", "false") == "true":
-                    await try_console("ssh", "nix@nix-cache", "--", "true")
+                    await asyncio.wait_for(
+                        try_console("ssh", "nix@nix-cache", "--", "true"), timeout=5.0
+                    )
                     extraArgs = [
                         "--extra-substituters",
                         "ssh-ng://nix@nix-cache?trusted=1&priority=20",
                     ]
                 else:
                     extraArgs = []
-            except Exception:
+            except (GRPCError, OSError, asyncio.TimeoutError) as e:
+                logger.warning(f"Configured SSH cache dysfunctional {e}")
                 extraArgs = []
 
             if storePath is not None:

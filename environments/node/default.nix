@@ -142,7 +142,7 @@ let
       bash # Used for build and upload scripts
       coreutils
       fishMinimal
-      lix
+      lixPackageSets.lix_2_93.lix
       openssh
       util-linuxMinimal
       gnugrep
