@@ -92,7 +92,13 @@ rec {
     pkgs.writeScriptBin "push" # bash
       ''
         #! ${pkgs.runtimeShell}
-        export PATH=${lib.makeBinPath [ pkgs.regctl pkgs.skopeo pkgs.gz-utils]}:$PATH
+        export PATH=${
+          lib.makeBinPath [
+            pkgs.regctl
+            pkgs.skopeo
+            pkgs.gzip
+          ]
+        }:$PATH
         skopeo login -u="$REPO_USERNAME" -p="$REPO_TOKEN" ${server}
         regctl registry login -u="$REPO_USERNAME" -p="$REPO_TOKEN" ${server}
         ${copyToRegistry "aarch64-linux"}
