@@ -109,7 +109,7 @@ let
             ];
           };
           services.csi-logger = {
-            command = "${lib.getExe' pkgs.coreutils "tail"} --follow /var/log/csi-daemon.log /var/log/dinit.log /var/log/ssh.log";
+            command = "${lib.getExe' pkgs.coreutils "tail"} --retry --follow /var/log/csi-daemon.log /var/log/dinit.log /var/log/ssh.log";
             options = [ "shares-console" ];
             depends-on = [ "csi-daemon" ];
           };

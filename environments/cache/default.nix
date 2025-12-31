@@ -111,7 +111,7 @@ let
             depends-ms = [ "nix-daemon" ];
           };
           services.cache-logger = {
-            command = "${lib.getExe' pkgs.coreutils "tail"} --follow /var/log/cache-daemon.log /var/log/dinit.log /var/log/ssh.log";
+            command = "${lib.getExe' pkgs.coreutils "tail"} --retry --follow /var/log/cache-daemon.log /var/log/dinit.log /var/log/ssh.log";
             options = [ "shares-console" ];
             depends-on = [ "cache-daemon" ];
           };
