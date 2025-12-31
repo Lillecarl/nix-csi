@@ -125,7 +125,9 @@ in
         };
       in
       {
-        nixNodeConfig.settings = sharedSettings // { };
+        nixNodeConfig.settings = sharedSettings // {
+          keep-outputs = true; # Remove when we have separate builders
+        };
         nixCacheConfig.settings = sharedSettings // {
           max-jobs = lib.mkDefault 0;
         };
