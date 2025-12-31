@@ -95,7 +95,7 @@ in
                       nix-config.mountPath = "/etc/nix";
                       registration.mountPath = "/registration";
                       ssh-config.mountPath = "/etc/ssh";
-                      authorized-keys.mountPath = "/etc/authoried_keys";
+                      authorized-keys.mountPath = "/etc/authorized_keys";
                       kubelet = {
                         mountPath = "/var/lib/kubelet";
                         mountPropagation = "Bidirectional";
