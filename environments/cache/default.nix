@@ -136,7 +136,8 @@ let
       }
     ];
   };
-  pathEnv = pkgs.buildEnv {
+
+  cacheEnv = pkgs.buildEnv {
     name = "cacheEnv";
     paths = with pkgs; [
       dinixEval.config.containerWrapper
@@ -155,5 +156,29 @@ let
     # So we can peek into eval
     passthru.dinixEval = dinixEval;
   };
+
+  initCopy =
+    pkgs.writeScriptBin "initCopy" # bash
+      ''
+        #! ${pkgs.runtimeShell}
+        export PATH=${
+          lib.makeBinPath [
+            pkgs.lixPackageSets.lix_2_93.lix
+            pkgs.rsync
+          ]
+        }
+        set -x
+        rsync --archive ${pkgs.dockerTools.caCertificates}/ /
+        nix build \
+          --store /nix-volume \
+          --out-link /nix-volume/nix/var/result \
+          ${cacheEnv}
+      '';
 in
-pathEnv
+pkgs.buildEnv {
+  name = "initEnv";
+  paths = [
+    cacheEnv
+    initCopy
+  ];
+}

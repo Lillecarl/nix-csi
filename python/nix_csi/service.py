@@ -34,6 +34,7 @@ CSI_GCROOTS = NIX_ROOT / "nix/var/nix/gcroots/nix-csi"
 
 RSYNC_CONCURRENCY = Semaphore(1)
 
+
 async def get_current_system():
     return (
         await try_captured(
@@ -73,6 +74,15 @@ class NodeServicer(csi_grpc.NodeBase):
             packagePath: Path = Path("/nonexistent/path/that/should/never/exist")
             gcPath = CSI_GCROOTS / request.volume_id
 
+            try:
+                await try_console("ssh", "nix@nix-cache", "--", "true")
+                extraArgs = [
+                    "--extra-substituters",
+                    "ssh-ng://nix@nix-cache?trusted=1&priority=20",
+                ]
+            except Exception:
+                extraArgs = []
+
             if storePath is not None:
                 async with self.volumeLocks[storePath]:
                     logger.debug(f"{storePath=}")
@@ -84,6 +94,7 @@ class NodeServicer(csi_grpc.NodeBase):
                         await try_console(
                             "nix",
                             "build",
+                            *extraArgs,
                             "--out-link",
                             gcPath,
                             packagePath,
@@ -96,6 +107,7 @@ class NodeServicer(csi_grpc.NodeBase):
                     result = await try_console(
                         "nix",
                         "build",
+                        *extraArgs,
                         "--print-out-paths",
                         "--out-link",
                         gcPath,
@@ -113,6 +125,7 @@ class NodeServicer(csi_grpc.NodeBase):
                         result = await try_console(
                             "nix",
                             "build",
+                            *extraArgs,
                             "--print-out-paths",
                             "--out-link",
                             gcPath,
@@ -141,12 +154,14 @@ class NodeServicer(csi_grpc.NodeBase):
             NIX_STATE_DIR.mkdir(parents=True, exist_ok=True)
 
             # Get closure
-            paths = (await try_captured(
-                "nix",
-                "path-info",
-                "--recursive",
-                packagePath,
-            )).stdout.splitlines()
+            paths = (
+                await try_captured(
+                    "nix",
+                    "path-info",
+                    "--recursive",
+                    packagePath,
+                )
+            ).stdout.splitlines()
 
             try:
                 # This try block is essentially nix copy into a chroot store with

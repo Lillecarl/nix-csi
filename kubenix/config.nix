@@ -125,9 +125,7 @@ in
         };
       in
       {
-        nixNodeConfig.settings = sharedSettings // {
-          substituters = [ "ssh-ng://nix@nix-cache?trusted=1&priority=20" ];
-        };
+        nixNodeConfig.settings = sharedSettings // { };
         nixCacheConfig.settings = sharedSettings // {
           max-jobs = lib.mkDefault 0;
         };

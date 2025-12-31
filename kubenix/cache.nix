@@ -50,27 +50,12 @@ in
                 initContainers = lib.mkNumberedList {
                   "1" = {
                     name = "initcopy";
-                    image = "ghcr.io/lillecarl/nix-csi/lix:${pkgs.lixPackageSets.lix_2_93.lix.version}";
+                    image = "ghcr.io/lillecarl/nix-csi/scratch:1.0.1";
+                    command = [ "initCopy" ];
                     imagePullPolicy = "Always";
                     securityContext.privileged = true; # chroot store
-                    env =
-                      lib.mkNamedList {
-                        TAG.value = cfg.version;
-                        amd64.value =
-                          if cfg.push then
-                            config.nix-csi.cachePackage.x86_64-linux
-                          else
-                            builtins.unsafeDiscardStringContext cfg.cachePackage.x86_64-linux;
-                        arm64.value =
-                          if cfg.push then
-                            config.nix-csi.cachePackage.aarch64-linux
-                          else
-                            builtins.unsafeDiscardStringContext cfg.cachePackage.aarch64-linux;
-                      }
-                      // lib.optionalAttrs (lib.stringLength (builtins.getEnv "GITHUB_KEY") > 0) {
-                        NIX_CONFIG.value = "access-tokens = github.com=${builtins.getEnv "GITHUB_KEY"}";
-                      };
                     volumeMounts = lib.mkNamedList {
+                      init-store.mountPath = "/nix";
                       nix-store.mountPath = "/nix-volume";
                       nix-config.mountPath = "/etc/nix";
                     };
@@ -115,6 +100,21 @@ in
                   authorized-keys.secret = {
                     secretName = "authorized-keys";
                     defaultMode = 438; # 666
+                  };
+                  init-store.csi = {
+                    driver = "nix.csi.store";
+                    volumeAttributes = {
+                      x86_64-linux =
+                        if cfg.push then
+                          config.nix-csi.cachePackage.x86_64-linux
+                        else
+                          builtins.unsafeDiscardStringContext cfg.cachePackage.x86_64-linux;
+                      aarch64-linux =
+                        if cfg.push then
+                          config.nix-csi.cachePackage.aarch64-linux
+                        else
+                          builtins.unsafeDiscardStringContext cfg.cachePackage.aarch64-linux;
+                    };
                   };
                 };
               };
