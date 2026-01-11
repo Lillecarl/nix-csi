@@ -56,7 +56,11 @@ in
     in
     {
       enable = lib.mkEnableOption "builder pods";
-      enableProxy = lib.mkEnableOption "external access to builder pods";
+      loadBalancerPort = lib.mkOption {
+        description = "Port to run public SSH on for builder jumpbox";
+        type = lib.types.nullOr lib.types.int;
+        default = 2223;
+      };
       privilegedSandboxedBuilds = lib.mkOption {
         description = "To set up the sandbox Nix must run with privileges, without the sandbox Nix builds can run unprivileged";
         type = lib.types.bool;
@@ -199,7 +203,7 @@ in
               }
             ) (lib.filterAttrs (n: v: v.enable) cfg.builders.deployments))
             // {
-              proxy = lib.mkIf cfg.builders.enableProxy {
+              proxy = lib.mkIf (cfg.builders.loadBalancerPort != null) {
                 spec =
                   let
                     labels = baseLabels // {
@@ -306,6 +310,21 @@ in
               };
             };
           };
+
+          Service.nix-proxy = lib.mkIf (cfg.cache.loadBalancerPort != null) (mkNCSI {
+            spec = {
+              selector = baseLabels // {
+                "nix.csi/proxy" = "true";
+              };
+              ports = lib.mkNamedList {
+                ssh = {
+                  port = cfg.builders.loadBalancerPort;
+                  targetPort = "ssh";
+                };
+              };
+              type = "LoadBalancer";
+            };
+          });
         };
     };
 }
