@@ -311,20 +311,22 @@ in
             };
           };
 
-          Service.nix-proxy = lib.mkIf (cfg.cache.loadBalancerPort != null) (mkNCSI {
-            spec = {
-              selector = baseLabels // {
-                "nix.csi/proxy" = "true";
-              };
-              ports = lib.mkNamedList {
-                ssh = {
-                  port = cfg.builders.loadBalancerPort;
-                  targetPort = "ssh";
+          Service.nix-proxy =
+            lib.mkIf (cfg.builders.enable && cfg.builders.loadBalancerPort != null)
+              (mkNCSI {
+                spec = {
+                  selector = baseLabels // {
+                    "nix.csi/proxy" = "true";
+                  };
+                  ports = lib.mkNamedList {
+                    ssh = {
+                      port = cfg.builders.loadBalancerPort;
+                      targetPort = "ssh";
+                    };
+                  };
+                  type = "LoadBalancer";
                 };
-              };
-              type = "LoadBalancer";
-            };
-          });
+              });
         };
     };
 }
