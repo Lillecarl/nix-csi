@@ -3,6 +3,7 @@
   pkgs,
   lib,
   mkNCSI,
+  subPath,
   inputs,
   ...
 }:
@@ -114,6 +115,73 @@ in
                   driver = "nix.csi.store";
                   readOnly = true;
                   volumeAttributes.${system} = pkgs.hello;
+                };
+              };
+            };
+          };
+        };
+      };
+      Job.commandpath-hello = mkNCSI {
+        spec = {
+          template = {
+            spec = {
+              restartPolicy = "Never";
+              containers = lib.recursiveUpdate containers {
+                hello.command = [ (lib.getExe pkgs.hello) ];
+              };
+              volumes = lib.mkNamedList {
+                nix-csi.csi = {
+                  driver = "nix.csi.store";
+                  readOnly = true;
+                };
+              };
+            };
+          };
+        };
+      };
+      Job.env-ssl = mkNCSI {
+        spec = {
+          template = {
+            spec = {
+              restartPolicy = "Never";
+              containers = lib.recursiveUpdate containers {
+                hello = {
+                  command = [
+                    (lib.getExe (
+                      pkgs.writeShellApplication {
+                        name = "printer";
+                        runtimeInputs = [
+                          pkgs.coreutils
+                          pkgs.hello
+                        ];
+                        text = # bash
+                          ''
+                            set -x
+                            hello
+                            ls -lah /etc/ssl/certs
+                          '';
+                      }
+                    ))
+                  ];
+                  volumeMounts =
+                    let
+                      mkMount =
+                        package: mountPath:
+                        {
+                          mountPath = mountPath;
+                          subPath = subPath "${package}${mountPath}";
+                          readOnly = true;
+                        };
+                    in
+                    {
+                      nix-csi = mkMount pkgs.cacert "/etc/ssl/certs";
+                    };
+                };
+              };
+              volumes = lib.mkNamedList {
+                nix-csi.csi = {
+                  driver = "nix.csi.store";
+                  readOnly = true;
                 };
               };
             };
