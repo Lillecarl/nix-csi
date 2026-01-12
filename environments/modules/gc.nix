@@ -36,7 +36,7 @@
               # Copy everything to cache
               CACHE_ENABLED="''${CACHE_ENABLED:-false}"
               if test "$CACHE_ENABLED" = "true"; then
-                nix copy --all --to ssh-ng://nix@nix-cache || true
+                nix copy --all --store local --to ssh-ng://nix@nix-cache || true
               fi
               # Garbage collect anything older than an hour
               nix path-info --store local --all --json | \
