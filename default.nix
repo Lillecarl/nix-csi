@@ -43,6 +43,23 @@ rec {
       }
     ];
   };
+  kubenixLocal = kubenixInstance {
+    module.imports = [
+      ./kubenix/ci
+      (
+        { config, ... }:
+        {
+          kluctl.preDeployScript = # bash
+            ''
+              cachix push nix-csi ${config.internal.manifestJSONFile}
+            '';
+          nix-csi.cache.enable = true;
+          nix-csi.builders.enable = true;
+          nix-csi.push = true;
+        }
+      )
+    ];
+  };
   kubenixPush = kubenixInstance {
     module.config = {
       nix-csi.push = true;
