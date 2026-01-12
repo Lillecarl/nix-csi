@@ -151,11 +151,11 @@ in
           overlays = [
             (import ../pkgs)
             (
-              self: pkgs:
+              final: prev:
               let
                 callPackage =
-                  pp:
-                  pkgs.callPackage pp {
+                  packagePath:
+                  final.callPackage packagePath {
                     inherit (cfg) dinix;
                   };
               in
