@@ -15,7 +15,10 @@ let
       image = "ghcr.io/lillecarl/nix-csi/scratch:1.0.1";
       command = [ "hello" ];
       volumeMounts = lib.mkNamedList {
-        nix-csi.mountPath = "/nix";
+        nix-csi = {
+          mountPath = "/nix";
+          subPath = "nix";
+        };
       };
     };
   };

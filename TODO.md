@@ -1,5 +1,10 @@
 # TODO
 
+## Volume subpathing
+Make /nix a subPath of the CSI volume instead of "hiding" it. This
+will allow mounting storePaths to the filesystem really easily without
+activationScripts and shit.
+
 ## Better SSH key management
 * Split server and client configuration
 * SSH certificates?

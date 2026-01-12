@@ -179,6 +179,7 @@ in
           lib.recursiveUpdate {
             inherit (cfg) metadata;
           } attrs;
+        subPath = spath: lib.removePrefix "/" toString spath;
       };
 
       nix-csi = { };

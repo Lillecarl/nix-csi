@@ -12,7 +12,7 @@ in
     kubernetes.resources.none.CSIDriver."nix.csi.store" = mkNCSI {
       spec = {
         attachRequired = false;
-        podInfoOnMount = false;
+        podInfoOnMount = true;
         volumeLifecycleModes = [ "Ephemeral" ];
         fsGroupPolicy = "File";
         requiresRepublish = false;

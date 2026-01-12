@@ -111,7 +111,10 @@ in
                   imagePullPolicy = "Always";
                   securityContext.capabilities.add = [ "SYS_CHROOT" ]; # chroot store
                   volumeMounts = lib.mkNamedList {
-                    init-store.mountPath = "/nix";
+                    init-store = {
+                      mountPath = "/nix";
+                      subPath = "nix";
+                    };
                     nix-store.mountPath = "/nix-volume";
                     nix-config.mountPath = "/etc/nix";
 
@@ -232,7 +235,10 @@ in
                             imagePullPolicy = "Always";
 
                             volumeMounts = lib.mkNamedList {
-                              nix-store.mountPath = "/nix";
+                              nix-store = {
+                                mountPath = "/nix";
+                                subPath = "nix";
+                              };
 
                               ssh-config.mountPath = "/etc/ssh";
                               ssh-dynauth.mountPath = "/etc/ssh-dynauth";
