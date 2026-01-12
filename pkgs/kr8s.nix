@@ -17,16 +17,16 @@
   hatchling,
   hatch-vcs,
 }:
-buildPythonPackage rec {
+buildPythonPackage (finalAttrs: {
   pname = "kr8s";
-  version = "0.20.13";
+  version = "0.20.14";
   pyproject = true;
 
   src = fetchFromGitHub {
     owner = "kr8s-org";
     repo = "kr8s";
-    tag = "v${version}";
-    hash = "sha256-9fo18ririQwBzxuPp8+oH20URv0nvXCkv0eIUL4xrZ8=";
+    tag = "v${finalAttrs.version}";
+    hash = "sha256-Q9rcaLpoT8RATKvw4oQdPSUKjeOCIJ+X0zKoo6z620E=";
   };
 
   build-system = [
@@ -55,4 +55,4 @@ buildPythonPackage rec {
     license = licenses.mit;
     maintainers = with maintainers; [ lillecarl ];
   };
-}
+})
