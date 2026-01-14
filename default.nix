@@ -38,6 +38,20 @@ rec {
     module.imports = [
       ./kubenix/ci
       {
+        kluctl.preDeployScript = # bash
+          ''
+            expected_context="kind"
+            current_context=$(kubectl config current-context)
+
+            if [[ "$current_context" != *"$expected_context" ]]; then
+                echo "Warning: Current context is $current_context, not *$expected_context" >&2
+                read -rp "Continue anyway? [y/N] " confirm
+                if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+                    echo "Aborted." >&2
+                    exit 1
+                fi
+            fi
+          '';
         nix-csi.cache.enable = false;
         nix-csi.builders.enable = false;
       }
