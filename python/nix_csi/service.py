@@ -119,6 +119,10 @@ class NodeServicer(csi_grpc.NodeBase):
 
         logger.info(f"Publish {request.target_path}")
 
+
+        if not request.volume_context.get("csi.storage.k8s.io/ephemeral"):
+            raise GRPCError(Status.INTERNAL, "This CSI driver only supports ephemeral volumes")
+
         async with self.volumeLocks[request.volume_id]:
             targetPath = Path(request.target_path)
             storePath = request.volume_context.get(self.system, None)
