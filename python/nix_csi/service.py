@@ -53,14 +53,14 @@ NAMESPACE = os.environ.get("KUBE_NAMESPACE", "nix-csi")
 BUILDERS_SERVICE = "nix-csi-builders"
 
 # Nix base32 excludes: e, o, t, u
-STORE_PATH_RE = re.compile(r"/nix/store/[0-9a-df-np-sv-z]{32}-[^\s/]+")
+STORE_PATH_RE = re.compile(r"/?nix/store/([0-9a-df-np-sv-z]{32}-[^\s/]+)")
 
 
 def extract_store_paths(value: Any) -> Iterator[Path]:
     match value:
         case str():
             for match in STORE_PATH_RE.findall(value):
-                yield Path(match)
+                yield Path("/nix/store") / match
         case Mapping():
             for v in value.values():
                 yield from extract_store_paths(v)
@@ -269,6 +269,8 @@ class NodeServicer(csi_grpc.NodeBase):
                     Status.INVALID_ARGUMENT,
                     "packagePath turned out invalid",
                 )
+            elif primaryPackagePath.exists():
+                logger.debug(f"Primary package {primaryPackagePath=}")
 
             # Root directory for volume. Contains /nix, also contains "workdir" and
             # "upperdir" if we're doing overlayfs

@@ -163,19 +163,46 @@ in
                       }
                     ))
                   ];
+                  env = lib.mkNamedList {
+                    SSL_CERT_FILE.value = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
+                    SSL_CERT_DIR.value = "${pkgs.cacert}/etc/ssl/certs";
+                  };
                   volumeMounts =
                     let
                       mkMount =
-                        package: mountPath:
+                        sPath:
+                        let
+                          extractSuffix =
+                            sPath:
+                            let
+                              str = toString sPath;
+                              matched = builtins.match "/nix/store/[0-9a-df-np-sv-z]{32}-[^/]+(.*)" str;
+                            in
+                            if matched == null then null else builtins.head matched;
+                        in
                         {
-                          mountPath = mountPath;
-                          subPath = subPath "${package}${mountPath}";
+                          name = "nix-csi";
+                          mountPath = extractSuffix sPath;
+                          subPath = subPath "${if lib.pathExists sPath then sPath else throw "path no good homes"}";
                           readOnly = true;
                         };
+                      testEnv = pkgs.buildEnv {
+                        name = "testenv";
+                        paths = [
+                          pkgs.dockerTools.fakeNss
+                          pkgs.dockerTools.binSh
+                        ];
+                      };
                     in
-                    {
-                      nix-csi = mkMount pkgs.cacert "/etc/ssl/certs";
-                    };
+                    lib.mkForce [
+                      (mkMount "${testEnv}/etc")
+                      {
+                        name = "nix-csi";
+                        mountPath = "/nix";
+                        subPath = "nix";
+                        readOnly = true;
+                      }
+                    ];
                 };
               };
               volumes = lib.mkNamedList {
