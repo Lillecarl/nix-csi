@@ -35,11 +35,11 @@
     "flake-compatish": {
       "flake": false,
       "locked": {
-        "lastModified": 1764453176,
-        "narHash": "sha256-/buZfkFEfX8pArH7r3gLaPrWGl/l5y1h5rjcaRrPBAQ=",
+        "lastModified": 1768508202,
+        "narHash": "sha256-5J2TLPPM60Z/6ACFKlGbNp8hkvGV/xtKT8/KiqPbDig=",
         "owner": "lillecarl",
         "repo": "flake-compatish",
-        "rev": "3216c4e8a957a6efffab69fe8352ec99aa7a9b11",
+        "rev": "1da2176b5b3469d3802114ad356e20d4362b6738",
         "type": "github"
       },
       "original": {

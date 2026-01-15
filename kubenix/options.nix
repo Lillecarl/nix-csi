@@ -15,7 +15,12 @@ let
         fcSrc = builtins.fetchTree fcLockInfo;
         flake-compatish = import fcSrc;
       in
-      flake-compatish ../.
+      flake-compatish {
+        source = ../.;
+        overrides = {
+          self = ../.;
+        };
+      }
     ).inputs;
 in
 {
