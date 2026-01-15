@@ -106,13 +106,7 @@ rec {
       ];
     };
 
-  pypkgs = (
-    pypkgs: with pypkgs; [
-      pkgs.nix-csi
-      pkgs.csi-proto-python
-      pkgs.kr8s
-    ]
-  );
+  pypkgs = pp: with pp; [  ] ++ pkgs.nix-csi.dependencies;
   python = pkgs.python3.withPackages pypkgs;
   xonsh = pkgs.xonsh.override {
     extraPackages = pypkgs;
