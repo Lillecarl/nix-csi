@@ -1,30 +1,15 @@
-let
-  inputs =
-    (
-      let
-        lockFile = builtins.readFile ./flake.lock;
-        lockAttrs = builtins.fromJSON lockFile;
-        fcLockInfo = lockAttrs.nodes.flake-compatish.locked;
-        fcSrc = builtins.fetchTree fcLockInfo;
-        flake-compatish = import fcSrc;
-      in
-      flake-compatish ./.
-    ).inputs;
-  pkgs = import inputs.nixpkgs {
-    overlays = [
-      (import ./pkgs)
-    ];
-  };
-  inherit (pkgs) lib;
+{
+  pkgs,
+  lib,
+}:
+rec {
   server = "ghcr.io";
   repo = "${server}/lillecarl/nix-csi";
-in
-rec {
-  inherit inputs pkgs;
+
   images = lib.genAttrs [ "aarch64-linux" "x86_64-linux" ] (
     system:
     let
-      sysPkgs = import inputs.nixpkgs { inherit system; };
+      sysPkgs = import pkgs.path { inherit system; };
       inherit (sysPkgs) lib;
 
       fakeNss = sysPkgs.dockerTools.fakeNss.override {

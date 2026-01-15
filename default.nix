@@ -188,4 +188,6 @@ rec {
         cp --no-preserve=mode ${optionsDocs.optionsCommonMark} $GIT_ROOT/doc/options.md
       '';
 
+  lixImage = pkgs.callPackage ./liximage.nix { };
+  scratchImage = pkgs.callPackage ./scratchimage.nix { };
 }

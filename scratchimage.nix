@@ -1,22 +1,5 @@
+{ pkgs }:
 let
-  inputs =
-    (
-      let
-        lockFile = builtins.readFile ./flake.lock;
-        lockAttrs = builtins.fromJSON lockFile;
-        fcLockInfo = lockAttrs.nodes.flake-compatish.locked;
-        fcSrc = builtins.fetchTree fcLockInfo;
-        flake-compatish = import fcSrc;
-      in
-      flake-compatish ./.
-    ).inputs;
-
-  pkgs = import inputs.nixpkgs {
-    overlays = [
-      (import ./pkgs)
-    ];
-  };
-
   version = "1.0.1";
 
   mkEmptyImage =

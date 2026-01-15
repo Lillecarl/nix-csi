@@ -33,18 +33,18 @@ jobs:
 
       - name: Build and push environments
         run: |
-          nix build --file default.nix push --out-link nix-envs
+          nix build --file . push --out-link nix-envs
           ./nix-envs/bin/push
 
       # Build and push all components sequentially to reuse Nix store
       - name: Build and push Lix image
         run: |
-          nix build --file liximage.nix push --out-link nix-images
+          nix build --file . lixImage.push --out-link nix-images
           ./nix-images/bin/push
 
       - name: Build and push scratch image
         run: |
-          nix build --file scratchimage.nix push --out-link nix-scratches
+          nix build --file . scratchImage.push --out-link nix-scratches
           ./nix-scratches/bin/push
 
   test-kind-cache:
