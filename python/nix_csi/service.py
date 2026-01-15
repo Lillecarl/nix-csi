@@ -119,9 +119,10 @@ class NodeServicer(csi_grpc.NodeBase):
 
         logger.info(f"Publish {request.target_path}")
 
-
         if not request.volume_context.get("csi.storage.k8s.io/ephemeral"):
-            raise GRPCError(Status.INTERNAL, "This CSI driver only supports ephemeral volumes")
+            raise GRPCError(
+                Status.INTERNAL, "This CSI driver only supports ephemeral volumes"
+            )
 
         async with self.volumeLocks[request.volume_id]:
             targetPath = Path(request.target_path)
@@ -509,16 +510,16 @@ class NodeServicer(csi_grpc.NodeBase):
         reply = csi_pb2.NodeGetInfoResponse(node_id=node_name)
         await stream.send_message(reply)
 
-    async def NodeGetVolumeStats(self, _stream):
+    async def NodeGetVolumeStats(self, stream):
         raise GRPCError(Status.UNIMPLEMENTED, "NodeGetVolumeStats not implemented")
 
-    async def NodeExpandVolume(self, _stream):
+    async def NodeExpandVolume(self, stream):
         raise GRPCError(Status.UNIMPLEMENTED, "NodeExpandVolume not implemented")
 
-    async def NodeStageVolume(self, _stream):
+    async def NodeStageVolume(self, stream):
         raise GRPCError(Status.UNIMPLEMENTED, "NodeStageVolume not implemented")
 
-    async def NodeUnstageVolume(self, _stream):
+    async def NodeUnstageVolume(self, stream):
         raise GRPCError(Status.UNIMPLEMENTED, "NodeUnstageVolume not implemented")
 
 

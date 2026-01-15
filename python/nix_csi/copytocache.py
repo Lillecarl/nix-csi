@@ -34,7 +34,9 @@ async def copyToCache(packagePath: Path):
         if pathInfoDrv.returncode == 0:
             paths += pathInfoDrv.stdout.splitlines()
         else:
-            logger.debug(f"No derivation paths found for {packagePath} (normal if fetched from substituters)")
+            logger.debug(
+                f"No derivation paths found for {packagePath} (normal if fetched from substituters)"
+            )
 
         # Filter out .drv files and deduplicate (path-info runs return overlapping results)
         # Set comprehension {x for x in ...} creates a set with unique values
@@ -44,7 +46,9 @@ async def copyToCache(packagePath: Path):
             for attempt in range(6):
                 if attempt > 0:
                     exp_backoff = min(5 * (2 ** (attempt - 1)), 60)
-                    logger.warning(f"Retry {attempt}/6 copying to cache after {exp_backoff}s: {packagePath}")
+                    logger.warning(
+                        f"Retry {attempt}/6 copying to cache after {exp_backoff}s: {packagePath}"
+                    )
                     await sleep(exp_backoff)
 
                 nixCopy = await run_captured(

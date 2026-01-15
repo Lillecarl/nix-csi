@@ -31,18 +31,20 @@ async def try_captured(*args, timeout: float | None = None):
         raise GRPCError(
             Status.INTERNAL,
             f"{_format_command_preview(args)} failed: {result.returncode=}",
-            result.combined
+            result.combined,
         )
     return result
 
 
-async def try_console(*args, log_level: int = logging.DEBUG, timeout: float | None = None):
+async def try_console(
+    *args, log_level: int = logging.DEBUG, timeout: float | None = None
+):
     result = await run_console(*args, log_level=log_level, timeout=timeout)
     if result.returncode != 0:
         raise GRPCError(
             Status.INTERNAL,
             f"{_format_command_preview(args)} failed: {result.returncode=}",
-            result.combined
+            result.combined,
         )
     return result
 
@@ -53,7 +55,9 @@ async def run_captured(*args, timeout: float | None = None):
 
 
 # Run async subprocess, forward output to console and return returncode
-async def run_console(*args, log_level: int = logging.DEBUG, timeout: float | None = None):
+async def run_console(
+    *args, log_level: int = logging.DEBUG, timeout: float | None = None
+):
     start_time = time.perf_counter()
     log_command(*args, log_level=log_level)
     proc = await asyncio.create_subprocess_exec(
@@ -84,12 +88,15 @@ async def run_console(*args, log_level: int = logging.DEBUG, timeout: float | No
                 stream_output(proc.stderr, stderr_data),
                 proc.wait(),
             ),
-            timeout=timeout
+            timeout=timeout,
         )
     except asyncio.TimeoutError:
         proc.kill()
         await proc.wait()
-        raise GRPCError(Status.DEADLINE_EXCEEDED, f"Command timed out after {timeout}s: {_format_command_preview(args)}")
+        raise GRPCError(
+            Status.DEADLINE_EXCEEDED,
+            f"Command timed out after {timeout}s: {_format_command_preview(args)}",
+        )
 
     elapsed_time = time.perf_counter() - start_time
     if elapsed_time > 5:
