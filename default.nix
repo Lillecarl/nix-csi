@@ -19,7 +19,7 @@ in
   },
 }:
 rec {
-  inherit pkgs;
+  inherit inputs pkgs;
   lib = pkgs.lib;
 
   easykubenix = import inputs.easykubenix;

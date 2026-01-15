@@ -13,6 +13,13 @@ pkgs.mkShell {
     pkgs.kubectx
     pkgs.skopeo
     pkgs.regctl
+    (default.inputs.treefmt-nix.lib.mkWrapper pkgs {
+      projectRootFile = "flake.nix";
+      programs.nixfmt.enable = true;
+      programs.ruff-format.enable = true;
+      programs.shellcheck.enable = true;
+      programs.fish_indent.enable = true;
+    })
   ];
   shellHook = # bash
   ''
