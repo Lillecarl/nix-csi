@@ -106,31 +106,6 @@ rec {
       ];
     };
 
-  pypkgs = pp: with pp; [  ] ++ pkgs.nix-csi.dependencies;
-  python = pkgs.python3.withPackages pypkgs;
-  xonsh = pkgs.xonsh.override {
-    extraPackages = pypkgs;
-  };
-  # env to add to PATH with direnv
-  repoenv = pkgs.buildEnv {
-    name = "repoenv";
-    paths = [
-      python
-      xonsh
-      pkgs.python3Packages.python-lsp-server
-      pkgs.python3Packages.python-lsp-ruff
-      pkgs.python3Packages.pylsp-rope
-      pkgs.python3Packages.pylsp-mypy
-      pkgs.cachix
-      pkgs.ruff
-      pkgs.kluctl
-      pkgs.stern
-      pkgs.kubectx
-      pkgs.skopeo
-      pkgs.regctl
-    ];
-  };
-
   push =
     pkgs.writeScriptBin "push" # bash
       ''

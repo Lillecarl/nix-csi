@@ -1,18 +1,28 @@
 let
-  default = import ./. {};
+  default = import ./. { };
   inherit (default) pkgs;
+
+  pypkgs = pp: with pp; [ ] ++ pkgs.nix-csi.dependencies;
+  python = pkgs.python3.withPackages pypkgs;
+  xonsh = pkgs.xonsh.override {
+    extraPackages = pypkgs;
+  };
 in
 pkgs.mkShell {
   packages = [
-    default.python
-    default.xonsh
+    python
+    xonsh
     pkgs.cachix
-    pkgs.ruff
     pkgs.kluctl
-    pkgs.stern
     pkgs.kubectx
-    pkgs.skopeo
+    pkgs.python3Packages.pylsp-mypy
+    pkgs.python3Packages.pylsp-rope
+    pkgs.python3Packages.python-lsp-ruff
+    pkgs.python3Packages.python-lsp-server
     pkgs.regctl
+    pkgs.ruff
+    pkgs.skopeo
+    pkgs.stern
     (default.inputs.treefmt-nix.lib.mkWrapper pkgs {
       projectRootFile = "flake.nix";
       programs.nixfmt.enable = true;
@@ -22,7 +32,8 @@ pkgs.mkShell {
     })
   ];
   shellHook = # bash
-  ''
-    export PYTHONPATH="${default.python}/${default.python.sitePackages}:$PYTHONPATH"
-  '';
+    ''
+      # Make LSPs that are too stupid to run python to check environment happy
+      export PYTHONPATH="${python}/${python.sitePackages}:$PYTHONPATH"
+    '';
 }
