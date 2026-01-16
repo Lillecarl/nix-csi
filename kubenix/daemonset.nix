@@ -59,8 +59,8 @@ in
                       # Use GOARCH instead of system since system is not valid bash variable identifier
                       # Only render storePaths here, building is done with a ConfigMap (config.nix) only if cfg.push is set
                       # this is so users don't have to build locally to deploy.
-                      ${x86Pkgs.go.GOARCH}.value = builtins.unsafeDiscardStringContext x86Pkgs.nix-csi-node-env;
-                      ${armPkgs.go.GOARCH}.value = builtins.unsafeDiscardStringContext armPkgs.nix-csi-node-env;
+                      ${x86Pkgs.go.GOARCH}.value = x86Pkgs.nix-csi-node-env;
+                      ${armPkgs.go.GOARCH}.value = armPkgs.nix-csi-node-env;
                     };
                     volumeMounts = lib.mkNamedList {
                       nix-store.mountPath = "/nix-volume";

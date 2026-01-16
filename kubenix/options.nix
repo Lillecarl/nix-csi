@@ -187,6 +187,24 @@ in
         subPath = spath: lib.removePrefix "/" (toString spath);
       };
 
+      kubernetes.transformers = lib.optional (!cfg.push) (
+        resource:
+        let
+          mapRecursive =
+            f: value:
+            if builtins.isAttrs value then
+              builtins.mapAttrs (n: v: mapRecursive f v) value
+            else if builtins.isList value then
+              map (mapRecursive f) value
+            else
+              f value;
+        in
+        if resource.metadata.namespace or null == cfg.namespace then
+          mapRecursive (x: if lib.isString x then builtins.unsafeDiscardStringContext x else x) resource
+        else
+          resource
+      );
+
       nix-csi = { };
     };
 }

@@ -163,8 +163,8 @@ in
                   volumeAttributes = {
                     # Only render storePaths here, building is done with a ConfigMap (config.nix) only if cfg.push is set
                     # this is so users don't have to build locally to deploy.
-                    x86_64-linux = builtins.unsafeDiscardStringContext x86Pkgs.nix-csi-builder-env;
-                    aarch64-linux = builtins.unsafeDiscardStringContext armPkgs.nix-csi-builder-env;
+                    x86_64-linux = x86Pkgs.nix-csi-builder-env;
+                    aarch64-linux = armPkgs.nix-csi-builder-env;
                   };
                 };
                 nix-store.emptyDir = { };
@@ -253,8 +253,8 @@ in
                             volumeAttributes = {
                               # Only render storePaths here, building is done with a ConfigMap (config.nix) only if cfg.push is set
                               # this is so users don't have to build locally to deploy.
-                              x86_64-linux = builtins.unsafeDiscardStringContext x86Pkgs.nix-csi-proxy-env;
-                              aarch64-linux = builtins.unsafeDiscardStringContext armPkgs.nix-csi-proxy-env;
+                              x86_64-linux = x86Pkgs.nix-csi-proxy-env;
+                              aarch64-linux = armPkgs.nix-csi-proxy-env;
                             };
                           };
 
