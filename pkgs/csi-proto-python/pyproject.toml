@@ -1,15 +1,15 @@
 [build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "csi"
 version = "0.1.0"
 description = "CSI driver spec for Python"
 authors = [
-    { name="Carl Andersson", email="carl@postspace.net" }
+    { name="Carl Andersson", email="github@lillecarl.com" }
 ]
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.12"
 license = { text = "MIT" }
 dependencies = []

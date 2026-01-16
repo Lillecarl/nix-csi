@@ -3,6 +3,7 @@
   lib,
   buildPythonPackage,
   fetchFromGitHub,
+  hatchling,
   grpcio-tools,
   grpcio,
   grpclib,
@@ -26,15 +27,14 @@ buildPythonPackage {
 
   src = ./.;
 
-  buildInputs = [ ];
-
+  build-system = [ hatchling ];
   nativeBuildInputs = [
     grpclib
     mypy-protobuf
     grpcio-tools
   ];
 
-  propagatedBuildInputs = [
+  dependencies = [
     grpclib
     mypy-protobuf
   ];
