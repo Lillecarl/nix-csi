@@ -42,6 +42,8 @@ buildPythonPackage {
   format = "pyproject";
   preBuild = ''
     mkdir -p src/csi
+    touch src/csi/py.typed
+    touch src/csi/__init__.py
     protoc \
       --proto_path="${spec}" \
       --python_out="src/csi" \
