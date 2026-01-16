@@ -39,7 +39,7 @@ rec {
             rsync --archive ${fakeNss}/ /
             nix \
               build \
-                --extra-substituters local?trusted=true \
+                --extra-substituters "local?trusted=true ssh-ng://nix@nix-cache?trusted=true" \
                 --max-jobs auto \
                 --option sandbox false \
                 --store /nix-volume \
