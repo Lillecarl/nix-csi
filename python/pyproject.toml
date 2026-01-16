@@ -10,10 +10,11 @@ authors = [{ name = "lillecarl", email = "github@lillecarl.com" }]
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
-dependencies = []
+dependencies = [
+  "kr8s",
+  "cryptography",
+  "csi",
+]
 
 [project.scripts]
 nix-csi = "nix_csi.cli:main"
-
-[tool.hatch.build.targets.wheel]
-packages = ["nix_csi"]

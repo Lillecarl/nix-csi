@@ -166,38 +166,36 @@ class NodeServicer(csi_grpc.NodeBase):
                 except (GRPCError, OSError, asyncio.TimeoutError):
                     logger.warning("Cache connectivity check failed")
 
-            podName = request.volume_context.get("csi.storage.k8s.io/pod.name", None)
-            podNamespace = request.volume_context.get(
-                "csi.storage.k8s.io/pod.namespace", None
-            )
-            podUid = request.volume_context.get("csi.storage.k8s.io/pod.uid", None)
+            # pod_name = request.volume_context.get("csi.storage.k8s.io/pod.name")
+            # pod_ns = request.volume_context.get("csi.storage.k8s.io/pod.namespace")
+            # pod_uid = request.volume_context.get("csi.storage.k8s.io/pod.uid")
 
-            packagePaths = []
-            if podName and podNamespace and podUid:
-                pod = await Pod.get(podName, podNamespace)
-                if pod.metadata.uid != podUid:
-                    raise GRPCError(Status.INTERNAL, "poduid doesn't match")
+            # package_paths = []
+            # if pod_name and pod_ns and pod_uid:
+            #     pod = await Pod.get(pod_name, pod_ns)
+            #     if pod.metadata.uid != pod_uid:
+            #         raise GRPCError(Status.INTERNAL, "poduid doesn't match")
 
-                pod = set(extract_store_paths(pod.raw))
-                for packagePath in pod:
-                    logger.debug(f"{packagePath=}")
-                    async with self.volumeLocks[str(packagePath)]:
-                        name = extract_store_name(packagePath)
-                        logger.debug(f"{name=}")
-                        result = await try_console(
-                            "nix",
-                            "build",
-                            *extraArgs,
-                            "--print-out-paths",
-                            "--out-link",
-                            gcRoot / name,
-                            packagePath,
-                            timeout=NIX_BUILD_TIMEOUT,
-                        )
-                        packagePaths.append(Path(result.stdout.splitlines()[0]))
+            #     pod = set(extract_store_paths(pod.raw))
+            #     for package_path in pod:
+            #         logger.debug(f"{package_path=}")
+            #         async with self.volumeLocks[str(package_path)]:
+            #             name = extract_store_name(package_path)
+            #             logger.debug(f"{name=}")
+            #             result = await try_console(
+            #                 "nix",
+            #                 "build",
+            #                 *extraArgs,
+            #                 "--print-out-paths",
+            #                 "--out-link",
+            #                 gcRoot / name,
+            #                 package_path,
+            #                 timeout=NIX_BUILD_TIMEOUT,
+            #             )
+            #             package_paths.append(Path(result.stdout.splitlines()[0]))
 
-            if packagePaths:
-                logger.debug(f"Extracted packages {packagePaths=}")
+            # if package_paths:
+            #     logger.debug(f"Extracted packages {package_paths=}")
 
             # Source selection order (intentional, documented in README):
             # 1. storePath - if present, use directly
@@ -218,7 +216,7 @@ class NodeServicer(csi_grpc.NodeBase):
                         storePath,
                         timeout=NIX_BUILD_TIMEOUT,
                     )
-                    packagePaths.append(Path(result.stdout.splitlines()[0]))
+                    package_paths.append(Path(result.stdout.splitlines()[0]))
                     if not primaryPackagePath.exists():
                         primaryPackagePath = Path(result.stdout.splitlines()[0])
 
@@ -237,7 +235,7 @@ class NodeServicer(csi_grpc.NodeBase):
                         flakeRef,
                         timeout=NIX_BUILD_TIMEOUT,
                     )
-                    packagePaths.append(Path(result.stdout.splitlines()[0]))
+                    package_paths.append(Path(result.stdout.splitlines()[0]))
                     if not primaryPackagePath.exists():
                         primaryPackagePath = Path(result.stdout.splitlines()[0])
 
@@ -260,11 +258,11 @@ class NodeServicer(csi_grpc.NodeBase):
                             tmp.name,
                             timeout=NIX_BUILD_TIMEOUT,
                         )
-                        packagePaths.append(Path(result.stdout.splitlines()[0]))
+                        package_paths.append(Path(result.stdout.splitlines()[0]))
                         if not primaryPackagePath.exists():
                             primaryPackagePath = Path(result.stdout.splitlines()[0])
 
-            if not primaryPackagePath.exists() and not packagePaths:
+            if not primaryPackagePath.exists() and not package_paths:
                 logger.error("packagePath doesn't exist after building")
                 raise GRPCError(
                     Status.INVALID_ARGUMENT,
@@ -287,7 +285,7 @@ class NodeServicer(csi_grpc.NodeBase):
                     "nix",
                     "path-info",
                     "--recursive",
-                    *packagePaths,
+                    *package_paths,
                 )
             ).stdout.splitlines()
 
@@ -296,14 +294,14 @@ class NodeServicer(csi_grpc.NodeBase):
                 # extra steps. (Hardlinking instead of dumbcopying)
 
                 # Install CSI gcroots
-                for packagePath in packagePaths:
-                    name = extract_store_name(packagePath)
+                for package_path in package_paths:
+                    name = extract_store_name(package_path)
                     await try_captured(
                         "nix",
                         "build",
                         "--out-link",
                         gcRoot / name,
-                        packagePath,
+                        package_path,
                         timeout=NIX_BUILD_TIMEOUT,
                     )
 
@@ -333,8 +331,8 @@ class NodeServicer(csi_grpc.NodeBase):
                 # install gcroots in container using chroot, store this is
                 # required because the auto roots created for /nix/var/result
                 # will point to Narnia while this one points into store.
-                for packagePath in packagePaths:
-                    name = extract_store_name(packagePath)
+                for package_path in package_paths:
+                    name = extract_store_name(package_path)
                     await try_captured(
                         "nix",
                         "build",
@@ -342,7 +340,7 @@ class NodeServicer(csi_grpc.NodeBase):
                         volumeRoot,
                         "--out-link",
                         NIX_STATE_DIR / f"gcroots/{name}",
-                        packagePath,
+                        package_path,
                     )
 
                 # install /nix/var/result in container using chroot store
