@@ -7,6 +7,7 @@
   googleapis-common-protos, # Google Errors
   gitMinimal, # Lix requires Git since it doesn't use libgit2
   kr8s, # Kubernetes API
+  shellous, # subprocessing
   lix, # We need a Nix implementation.... :)
   nix_init_db, # Import from one nix DB to another
   openssh, # Copying to cache
@@ -29,6 +30,7 @@ buildPythonApplication {
     googleapis-common-protos
     gitMinimal
     kr8s
+    shellous
     lix
     nix_init_db
     openssh
