@@ -1,5 +1,7 @@
 # nixkube / nix + kube / nix-csi / nix-nri
 
+[![Documentation Status](https://readthedocs.org/projects/nixkube/badge/?version=latest)](https://nixkube.readthedocs.io/en/latest/?badge=latest)
+
 Mount /nix into Kubernetes pods using the CSI ephemeral volumes or NRI(Node Resource Interface). Volumes
 share lifetime with Pods and are embedded into the Podspec.
 
@@ -107,6 +109,8 @@ spec:
 Examples:
 * [multi-system example](https://github.com/Lillecarl/hetzkube/blob/4ed76ec77bfb104d1c2307b1ba178efa61dd34e2/kubenix/modules/cheapam.nix#L113)
 * [single-system ci example(s)](https://github.com/Lillecarl/nix-csi/blob/3179e5f8383e760bbef313300a224e44f18722c7/kubenix/ci/default.nix)
+
+[Documentation](https://nixkube.readthedocs.io/)
 
 ---
 
