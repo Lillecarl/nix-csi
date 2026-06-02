@@ -108,3 +108,9 @@ Examples:
 * [multi-system example](https://github.com/Lillecarl/hetzkube/blob/4ed76ec77bfb104d1c2307b1ba178efa61dd34e2/kubenix/modules/cheapam.nix#L113)
 * [single-system ci example(s)](https://github.com/Lillecarl/nix-csi/blob/3179e5f8383e760bbef313300a224e44f18722c7/kubenix/ci/default.nix)
 
+---
+
+*This project is made possible by*
+
+[![Dynamist](.assets/dynamist-logo.png)](https://dynamist.se/)
+
