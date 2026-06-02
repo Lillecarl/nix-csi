@@ -11,6 +11,9 @@ let
       pytest
       pytest-asyncio
       hypothesis
+      sphinx
+      myst-parser
+      furo
     ]
     ++ pkgs.nixkube.dependencies
     ++ pkgs.pynixd-nixkube.dependencies;

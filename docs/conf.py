@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+import os
+
 project = "nixkube"
 copyright = "2025, Carl Andersson"
 author = "Carl Andersson"
@@ -20,6 +24,8 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 html_theme = "furo"
 
-intersphinx_mapping = {
-    "python": ("https://docs.python.org/3", None),
-}
+smartquotes = False
+
+intersphinx_mapping = (
+    {} if os.environ.get("NIXCSI_DOCS_OFFLINE") else {"python": ("https://docs.python.org/3", None)}
+)

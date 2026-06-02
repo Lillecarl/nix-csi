@@ -36,9 +36,11 @@
               allowUnfree = true;
             };
           };
+          def = import ./. { inherit system; };
         in
         {
           inherit (pkgs) hello;
+          inherit (def) nixkube-docs;
           helloEnv = pkgs.buildEnv {
             name = "helloEnv";
             paths = [

@@ -269,6 +269,8 @@ rec {
     programs.yamlfmt.enable = true;
   };
 
+  nixkube-docs = pkgs.python3Packages.callPackage ./nix/docs.nix { };
+
   nixImage = pkgs.callPackage ./niximage.nix { };
   scratchImage = pkgs.callPackage ./scratchimage.nix { };
   ci-debug = pkgs.callPackage ./pkgs/ci-debug { };

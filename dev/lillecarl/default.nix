@@ -13,12 +13,14 @@ rec {
         { config, lib, ... }:
         {
           config = {
-            kubernetes.objects.nixkube.Service.pynixd-lb.metadata.annotations = {
-              "external-dns.alpha.kubernetes.io/hostname" = hostname;
-              "external-dns.alpha.kubernetes.io/ttl" = "60";
+            kubernetes.objects.nixkube = {
+              Service.pynixd-lb.metadata.annotations = {
+                "external-dns.alpha.kubernetes.io/hostname" = hostname;
+                "external-dns.alpha.kubernetes.io/ttl" = "60";
+              };
+              StatefulSet.pynixd.spec.template.metadata.labels."cilium.io/ingress" = "true";
+              # StatefulSet.pynixd.spec.volumeClaimTemplates."1".spec.resources.requests.storage = lib.mkForce "20Gi";
             };
-            kubernetes.objects.nixkube.StatefulSet.pynixd.spec.template.metadata.labels."cilium.io/ingress" =
-              "true";
             kluctl = {
               preDeployScript = # bash
                 ''
